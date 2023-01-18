@@ -25,6 +25,7 @@ BraceWrapping:
   AfterFunction: true
   AfterNamespace: true
   AfterUnion: false
+  BeforeLambdaBody: true
   BeforeCatch: false
   BeforeElse: false
   IndentBraces: false
@@ -66,3 +67,4 @@ SpacesInSquareBrackets: false
 TabWidth: 4
 UseTab: AlignWithSpaces
 SeparateDefinitionBlocks: Always
+ReferenceAlignment: Left
