@@ -1,6 +1,6 @@
 #include <cstdlib>
-
-import std.core;
+#include <iostream>
+#include <stdexcept>
 
 import HelloTriangle;
 
@@ -9,7 +9,7 @@ int main()
 	HelloTriangleApplication app{};
 
 	try {
-		app.run();
+//		app.run();
 	} catch (const std::exception &e) {
 		std::cerr << e.what() << std::endl;
 		return EXIT_FAILURE;
