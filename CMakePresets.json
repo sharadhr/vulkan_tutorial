@@ -1,0 +1,132 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "x64-win-dbg",
+      "displayName": "x64 Windows Debug Configure",
+      "description": "Windows 64-bit debug build using Ninja",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl"
+      },
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      }
+    },
+    {
+      "name": "x64-win-reldbg",
+      "displayName": "x64 Windows RelWithDebInfo Configure",
+      "description": "Windows 64-bit release build using Ninja with debug symbols",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl"
+      },
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      }
+    },
+    {
+      "name": "x64-linux-dbg",
+      "displayName": "x64 Linux Debug Configure",
+      "description": "Linux 64-bit debug build using Ninja",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-linux",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      },
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      }
+    },
+    {
+      "name": "x64-linux-reldbg",
+      "displayName": "x64 Linux RelWithDebInfo Configure",
+      "description": "Linux 64-bit release build using Ninja with debug symbols",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-linux",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      },
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "x64-win-dbg-build",
+      "displayName": "x64 Windows Debug Build",
+      "description": "Windows 64-bit debug build using Ninja",
+      "configurePreset": "x64-win-dbg",
+      "verbose": true
+    },
+    {
+      "name": "x64-win-reldbg-build",
+      "displayName": "x64 Windows RelWithDebInfo Build",
+      "description": "Windows 64-bit release build using Ninja with debug symbols",
+      "configurePreset": "x64-win-reldbg",
+      "verbose": true
+    },
+    {
+      "name": "x64-linux-dbg-build",
+      "displayName": "x64 Linux Debug Build",
+      "description": "Linux 64-bit debug build using Ninja",
+      "configurePreset": "x64-linux-dbg",
+      "verbose": true
+    },
+    {
+      "name": "x64-linux-reldbg-build",
+      "displayName": "x64 Linux RelWithDebInfo Build",
+      "description": "Linux 64-bit release build using Ninja with debug symbols",
+      "configurePreset": "x64-linux-reldbg",
+      "verbose": true
+    }
+  ]
+}

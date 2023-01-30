@@ -17,11 +17,11 @@ AlwaysBreakAfterReturnType: None
 AlwaysBreakTemplateDeclarations: Yes
 BreakBeforeBraces: Custom
 BraceWrapping:
-  AfterCaseLabel: false
+  AfterCaseLabel: true
   AfterClass: true
   AfterStruct: true
-  AfterControlStatement: Never
-  AfterEnum: false
+  AfterControlStatement: MultiLine
+  AfterEnum: true
   AfterFunction: true
   AfterNamespace: true
   AfterUnion: false
@@ -35,15 +35,15 @@ BreakBeforeBinaryOperators: None
 BreakBeforeTernaryOperators: true
 BreakConstructorInitializers: BeforeColon
 BreakInheritanceList: BeforeColon
-ColumnLimit: 120
+ColumnLimit: 150
 CompactNamespaces: false
 ContinuationIndentWidth: 8
 IndentCaseLabels: true
 IndentPPDirectives: None
 IndentWidth: 4
-KeepEmptyLinesAtTheStartOfBlocks: true
-MaxEmptyLinesToKeep: 2
-NamespaceIndentation: All
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+NamespaceIndentation: None
 ObjCSpaceAfterProperty: false
 ObjCSpaceBeforeProtocolList: true
 PointerAlignment: Left
@@ -65,6 +65,11 @@ SpacesInContainerLiterals: false
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
 TabWidth: 4
-UseTab: AlignWithSpaces
+UseTab: ForIndentation
 SeparateDefinitionBlocks: Always
+QualifierAlignment: Right
 ReferenceAlignment: Left
+LambdaBodyIndentation: Signature
+PackConstructorInitializers: CurrentLine
+BinPackParameters: false
+BinPackArguments: false

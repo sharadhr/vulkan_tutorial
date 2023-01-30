@@ -1,18 +1,16 @@
+#include "HelloTriangleApplication.hpp"
 #include <cstdlib>
+#include <iostream>
+#include <stdexcept>
 
-import std.core;
-
-import HelloTriangle;
-
-int main()
+auto main() -> int
 {
-	HelloTriangleApplication app{};
-
 	try {
+		HelloTriangle::Application app{};
 		app.run();
-	} catch (const std::exception &e) {
+	} catch (std::exception const& e) {
 		std::cerr << e.what() << std::endl;
-		return EXIT_FAILURE;
+		std::exit(EXIT_FAILURE);
 	}
-	return EXIT_SUCCESS;
+	std::exit(EXIT_SUCCESS);
 }
