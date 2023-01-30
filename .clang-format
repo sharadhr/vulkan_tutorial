@@ -35,7 +35,7 @@ BreakBeforeBinaryOperators: None
 BreakBeforeTernaryOperators: true
 BreakConstructorInitializers: BeforeColon
 BreakInheritanceList: BeforeColon
-ColumnLimit: 120
+ColumnLimit: 150
 CompactNamespaces: false
 ContinuationIndentWidth: 8
 IndentCaseLabels: true
@@ -65,9 +65,11 @@ SpacesInContainerLiterals: false
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
 TabWidth: 4
-UseTab: AlignWithSpaces
+UseTab: ForIndentation
 SeparateDefinitionBlocks: Always
 QualifierAlignment: Right
 ReferenceAlignment: Left
 LambdaBodyIndentation: Signature
 PackConstructorInitializers: CurrentLine
+BinPackParameters: false
+BinPackArguments: false
