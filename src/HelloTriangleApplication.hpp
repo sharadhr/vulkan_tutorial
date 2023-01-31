@@ -1,6 +1,7 @@
 #pragma once
 
 #include <GLFW/glfw3.h>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <ranges>
@@ -92,10 +93,19 @@ private:
 	vk::Extent2D swapchainExtent{chooseSwapExtent(window, swapchainSupport.capabilities)};
 	std::vector<vk::Image> swapchainImages{swapchain.getImages()};
 	std::vector<vkr::ImageView> swapchainImageViews{getImageViews()};
-
+	vkr::RenderPass renderPass{makeRenderPass()};
+	vkr::PipelineLayout pipelineLayout{makeGraphicsPipeline().first};
+	vkr::Pipeline graphicsPipeline{makeGraphicsPipeline().second};
+	std::vector<vkr::Framebuffer> swapchainFramebuffers{makeFramebuffers()};
+	vkr::CommandPool commandPool{makeCommandPool()};
+	vkr::CommandBuffer commandBuffer{makeCommandBuffer()};
+	vkr::Semaphore imageAvailableSemaphore{makeSemaphore()};
+	vkr::Semaphore renderFinishedSemaphore{makeSemaphore()};
+	vkr::Fence inFlightFence{makeFence()};
 
 	//  INSTANCE PRIVATE
-	auto mainLoop() const -> void;
+	auto mainLoop() -> void;
+	auto drawFrame() -> void;
 	auto makeInstance() -> vkr::Instance;
 	auto makeDebugMessenger() -> vkr::DebugUtilsMessengerEXT;
 	auto makeSurface() -> vkr::SurfaceKHR;
@@ -103,9 +113,19 @@ private:
 	auto makeDevice() -> vkr::Device;
 	auto makeSwapchain() -> vkr::SwapchainKHR;
 	auto getImageViews() -> std::vector<vkr::ImageView>;
+	auto makeShaderModule(std::span<std::byte const>) -> vkr::ShaderModule;
+	auto makeRenderPass() -> vkr::RenderPass;
+	auto makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::Pipeline>;
+	auto makeFramebuffers() -> std::vector<vkr::Framebuffer>;
+	auto makeCommandPool() -> vkr::CommandPool;
+	[[nodiscard]] auto makeCommandBuffer() const -> vkr::CommandBuffer;
+	auto recordCommandBuffer(std::uint32_t) -> void;
+    auto makeSemaphore() -> vkr::Semaphore;
+	auto makeFence() -> vkr::Fence;
 
 	//	STATIC PRIVATE
 	static auto chooseSwapSurfaceFormat(std::span<vk::SurfaceFormatKHR const>) -> vk::SurfaceFormatKHR;
 	static auto chooseSwapExtent(GLFWWindowPointer const& window, vk::SurfaceCapabilitiesKHR const& capabilities) -> vk::Extent2D;
+	static auto readFile(std::filesystem::path const&) -> std::vector<std::byte>;
 };
 }// namespace HelloTriangle
