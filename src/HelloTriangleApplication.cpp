@@ -375,13 +375,14 @@ auto Application::makeShaderModule(std::span<std::byte const> shaderCode) -> vkr
 
 auto Application::makeRenderPass() -> vkr::RenderPass
 {
-	auto constexpr colourAttachment{vk::AttachmentDescription{.samples{vk::SampleCountFlagBits::e1},
-	                                                          .loadOp{vk::AttachmentLoadOp::eClear},
-	                                                          .storeOp{vk::AttachmentStoreOp::eStore},
-	                                                          .stencilLoadOp{vk::AttachmentLoadOp::eDontCare},
-	                                                          .stencilStoreOp{vk::AttachmentStoreOp::eDontCare},
-	                                                          .initialLayout{vk::ImageLayout::eUndefined},
-	                                                          .finalLayout{vk::ImageLayout::ePresentSrcKHR}}};
+	auto const colourAttachment{vk::AttachmentDescription{.format{swapchainImageFormat},
+	                                                      .samples{vk::SampleCountFlagBits::e1},
+	                                                      .loadOp{vk::AttachmentLoadOp::eClear},
+	                                                      .storeOp{vk::AttachmentStoreOp::eStore},
+	                                                      .stencilLoadOp{vk::AttachmentLoadOp::eDontCare},
+	                                                      .stencilStoreOp{vk::AttachmentStoreOp::eDontCare},
+	                                                      .initialLayout{vk::ImageLayout::eUndefined},
+	                                                      .finalLayout{vk::ImageLayout::ePresentSrcKHR}}};
 
 	auto constexpr colourAttachmentRef{vk::AttachmentReference{.layout{vk::ImageLayout::eAttachmentOptimal}}};
 
@@ -440,7 +441,8 @@ auto Application::makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::
 	                                                                   .polygonMode{vk::PolygonMode::eFill},
 	                                                                   .cullMode{vk::CullModeFlagBits::eBack},
 	                                                                   .frontFace{vk::FrontFace::eClockwise},
-	                                                                   .depthBiasEnable{VK_FALSE}}};
+	                                                                   .depthBiasEnable{VK_FALSE},
+	                                                                   .lineWidth{1.0f}}};
 
 	auto constexpr multisampling{
 	        vk::PipelineMultisampleStateCreateInfo{.rasterizationSamples{vk::SampleCountFlagBits::e1}, .sampleShadingEnable{VK_FALSE}}};
@@ -541,6 +543,7 @@ auto Application::recordCommandBuffer(std::uint32_t imageIndex) -> void
 	commandBuffer.setScissor(0, scissor);
 	commandBuffer.draw(3, 1, 0, 0);
 	commandBuffer.endRenderPass();
+	commandBuffer.end();
 }
 
 auto Application::drawFrame() -> void
