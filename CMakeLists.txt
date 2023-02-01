@@ -13,17 +13,14 @@ find_package(fmt CONFIG REQUIRED)
 
 add_executable(vulkan_tutorial)
 
-target_sources(vulkan_tutorial PRIVATE src/HelloTriangleApplication.cpp src/main.cpp)
+target_sources(vulkan_tutorial PRIVATE src/HelloTriangleApplication.cpp src/main.cpp $<$<PLATFORM_ID:Linux>:src/dlclose.cpp>)
 target_glsl_shaders(vulkan_tutorial PRIVATE src/shaders/triangle.vert src/shaders/triangle.frag)
 target_compile_features(vulkan_tutorial PRIVATE cxx_std_20)
 set_target_properties(vulkan_tutorial PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(vulkan_tutorial PRIVATE glfw glm::glm fmt::fmt Threads::Threads Vulkan::Vulkan)
 target_compile_definitions(vulkan_tutorial PRIVATE
         VULKAN_HPP_NO_CONSTRUCTORS
-        VULKAN_HPP_NO_SMART_HANDLE
-        VULKAN_HPP_STORAGE_SHARED
-        VULKAN_HPP_STORAGE_SHARED_EXPORT
-        VULKAN_HPP_LOADER_DYNAMIC_LOADER=1)
+        VULKAN_HPP_NO_SMART_HANDLE)
 target_precompile_headers(vulkan_tutorial PRIVATE
         ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.hpp
         ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_raii.hpp)
@@ -31,4 +28,9 @@ target_compile_options(vulkan_tutorial PRIVATE
         # windows and msvc/clang
         $<$<PLATFORM_ID:Windows>:/W4 /permissive- $<$<CXX_COMPILER_ID:Clang>:-Wno-braced-scalar-init>>
         # not-windows and clang or gcc
-        $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<OR:$<CXX_COMPILER_ID:Clang,GNU>>>:-Wall -Wextra -pedantic -fsanitize=address -fsanitize=undefined -fdiagnostics-color=always -Wno-braced-scalar-init>)
+        $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<OR:$<CXX_COMPILER_ID:Clang,GNU>>>:-Wall -Wextra -pedantic -fsanitize=address -fdiagnostics-color=always -Wno-braced-scalar-init>)
+target_link_options(vulkan_tutorial PRIVATE
+        # windows and msvc
+        $<$<PLATFORM_ID:Windows>:/sanitize=address $<$<CXX_COMPILER_ID:Clang>:-fsanitize=address>>
+        # not-windows and clang or gcc
+        $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<OR:$<CXX_COMPILER_ID:Clang,GNU>>>:-fsanitize=address -fsanitize=undefined>)
