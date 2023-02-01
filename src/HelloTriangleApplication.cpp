@@ -1,5 +1,6 @@
 #include "HelloTriangleApplication.hpp"
 
+#include <GLFW/glfw3.h>
 #include <algorithm>
 #include <filesystem>
 #include <fmt/format.h>
@@ -12,14 +13,6 @@ namespace fs = std::filesystem;
 
 using namespace std::string_view_literals;
 using namespace fmt::literals;
-
-auto makeWindowPointer(const std::uint32_t width, const std::uint32_t height, std::string_view windowName) -> GLFWWindowPointer
-{
-	glfwInit();
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-	return GLFWWindowPointer{glfwCreateWindow(width, height, windowName.data(), nullptr, nullptr)};
-}
 
 namespace
 {
@@ -174,6 +167,12 @@ auto chooseSwapPresentMode(std::span<vk::PresentModeKHR const> availablePresentM
 
 	return *presentMode;
 }
+
+auto frameBufferResizeCallback = [](GLFWwindow* window, [[maybe_unused]] int width, [[maybe_unused]] int height)
+{
+	const auto app{static_cast<HelloTriangle::Application*>(glfwGetWindowUserPointer(window))};
+	app->framebufferResized = true;
+};
 }// namespace
 
 Application::Application() = default;
@@ -186,7 +185,14 @@ auto Application::mainLoop() -> void
 {
 	while (!glfwWindowShouldClose(window.get())) {
 		glfwPollEvents();
-		drawFrame();
+		try {
+			drawFrame();
+		} catch (vk::OutOfDateKHRError const&) {
+			if (framebufferResized) {
+				framebufferResized = false;
+			}
+			remakeSwapchain();
+		}
 	}
 	logicalDevice.waitIdle();
 }
@@ -300,11 +306,15 @@ auto Application::chooseSwapExtent(GLFWWindowPointer const& window, vk::SurfaceC
 
 auto Application::makeSwapchain() -> vkr::SwapchainKHR
 {
+	auto const newSwapchainSupport{SwapchainSupportDetails{physicalDevice, surface}};
+	if (swapchainSupport != newSwapchainSupport) {
+		swapchainSupport = newSwapchainSupport;
+	}
 	auto const [format, colorSpace]{chooseSwapSurfaceFormat(swapchainSupport.formats)};
 	auto const presentMode{chooseSwapPresentMode(swapchainSupport.presentModes)};
 	auto const extent{chooseSwapExtent(window, swapchainSupport.capabilities)};
 	auto const imageCount{std::max(swapchainSupport.capabilities.minImageCount + 1, swapchainSupport.capabilities.maxImageCount)};
-	auto const indicesVec{std::vector<std::uint32_t>{indices.graphicsFamily.value(), indices.presentFamily.value()}};
+	auto const indicesVec{std::vector{indices.graphicsFamily.value(), indices.presentFamily.value()}};
 
 	auto swapchainCreateInfo{vk::SwapchainCreateInfoKHR{
 	        .surface{*surface},
@@ -323,15 +333,20 @@ auto Application::makeSwapchain() -> vkr::SwapchainKHR
 	        .clipped{VK_TRUE},
 	        .oldSwapchain{VK_NULL_HANDLE}}};
 
+	if (format != swapchainImageFormat or extent != swapchainExtent) {
+		swapchainImageFormat = format;
+		swapchainExtent = extent;
+	}
+
 	return {logicalDevice, swapchainCreateInfo};
 }
 
-auto Application::getImageViews() -> std::vector<vkr::ImageView>
+auto Application::makeImageViews() -> std::vector<vkr::ImageView>
 {
 	auto imageViews{std::vector<vkr::ImageView>{}};
-	std::ranges::transform(swapchainImages,
+	std::ranges::transform(swapchain.getImages(),
 	                       std::back_inserter(imageViews),
-	                       [&](auto const& image)
+	                       [this](auto const& image)
 	                       {
 		                       auto const imageCreateInfo{vk::ImageViewCreateInfo{.image{image},
 		                                                                          .viewType{vk::ImageViewType::e2D},
@@ -383,9 +398,7 @@ auto Application::makeRenderPass() -> vkr::RenderPass
 	                                                      .stencilStoreOp{vk::AttachmentStoreOp::eDontCare},
 	                                                      .initialLayout{vk::ImageLayout::eUndefined},
 	                                                      .finalLayout{vk::ImageLayout::ePresentSrcKHR}}};
-
 	auto constexpr colourAttachmentRef{vk::AttachmentReference{.layout{vk::ImageLayout::eAttachmentOptimal}}};
-
 	auto const subpass{vk::SubpassDescription{.pipelineBindPoint{vk::PipelineBindPoint::eGraphics},
 	                                          .colorAttachmentCount{1u},
 	                                          .pColorAttachments{&colourAttachmentRef}}};
@@ -422,7 +435,6 @@ auto Application::makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::
 	auto constexpr vertexInputInfo{vk::PipelineVertexInputStateCreateInfo{}};
 	auto constexpr inputAssembly{
 	        vk::PipelineInputAssemblyStateCreateInfo{.topology{vk::PrimitiveTopology::eTriangleList}, .primitiveRestartEnable{VK_FALSE}}};
-
 	auto const viewport{vk::Viewport{.x{0.0f},
 	                                 .y{0.0f},
 	                                 .width{static_cast<float>(swapchainExtent.width)},
@@ -508,15 +520,16 @@ auto Application::makeCommandPool() -> vkr::CommandPool
 	return {logicalDevice, poolInfo};
 }
 
-auto Application::makeCommandBuffer() const -> vkr::CommandBuffer
+auto Application::makeCommandBuffers() const -> vkr::CommandBuffers
 {
-	auto const allocInfo{
-	        vk::CommandBufferAllocateInfo{.commandPool{*commandPool}, .level{vk::CommandBufferLevel::ePrimary}, .commandBufferCount{1u}}};
+	auto const allocInfo{vk::CommandBufferAllocateInfo{.commandPool{*commandPool},
+	                                                   .level{vk::CommandBufferLevel::ePrimary},
+	                                                   .commandBufferCount{MAX_FRAMES_IN_FLIGHT}}};
 
-	return std::move(vkr::CommandBuffers{logicalDevice, allocInfo}.front());
+	return {logicalDevice, allocInfo};
 }
 
-auto Application::recordCommandBuffer(std::uint32_t imageIndex) -> void
+auto Application::recordCommandBuffer(vkr::CommandBuffer& commandBuffer, std::uint32_t imageIndex) -> void
 {
 	auto constexpr beginInfo{vk::CommandBufferBeginInfo{}};
 	auto constexpr clearColour{vk::ClearValue{{std::array{0.0f, 0.0f, 0.0f, 1.0f}}}};
@@ -548,28 +561,34 @@ auto Application::recordCommandBuffer(std::uint32_t imageIndex) -> void
 
 auto Application::drawFrame() -> void
 {
-	if (logicalDevice.waitForFences(*inFlightFence, VK_TRUE, std::numeric_limits<std::uint64_t>::max()) != vk::Result::eSuccess) {
-		throw std::runtime_error{"Failed to wait for fences"};
+	if (auto const waitResult{logicalDevice.waitForFences(*inFlightFences.at(currentFrame), VK_TRUE, std::numeric_limits<std::uint64_t>::max())};
+	    waitResult != vk::Result::eSuccess)
+	{
+		throw std::runtime_error("failed to acquire swapchain image");
 	}
-	logicalDevice.resetFences(*inFlightFence);
-	auto const [acquireResult, imageIndex]{swapchain.acquireNextImage(std::numeric_limits<std::uint64_t>::max(), *imageAvailableSemaphore, nullptr)};
-	if (acquireResult != vk::Result::eSuccess) {
+
+	auto const [acquireResult, imageIndex] =
+	        swapchain.acquireNextImage(std::numeric_limits<std::uint64_t>::max(), *imageAvailableSemaphores.at(currentFrame));
+	if (acquireResult != vk::Result::eSuccess and acquireResult != vk::Result::eSuboptimalKHR) {
 		throw std::runtime_error{"Failed to acquire swapchain image"};
 	}
-	commandBuffer.reset();
-	recordCommandBuffer(imageIndex);
 
-	auto const waitSemaphores{std::array{*imageAvailableSemaphore}};
-	auto const signalSemaphores{std::array{*renderFinishedSemaphore}};
+	logicalDevice.resetFences(*inFlightFences.at(currentFrame));
+
+	commandBuffers.at(currentFrame).reset();
+	recordCommandBuffer(commandBuffers.at(currentFrame), imageIndex);
+
+	auto const waitSemaphores{std::array{*imageAvailableSemaphores.at(currentFrame)}};
+	auto const signalSemaphores{std::array{*renderFinishedSemaphores.at(currentFrame)}};
 	auto constexpr waitStages{vk::Flags{vk::PipelineStageFlagBits::eColorAttachmentOutput}};
 	auto const submitInfo{vk::SubmitInfo{.waitSemaphoreCount{waitSemaphores.size()},
 	                                     .pWaitSemaphores{waitSemaphores.data()},
 	                                     .pWaitDstStageMask{&waitStages},
 	                                     .commandBufferCount{1u},
-	                                     .pCommandBuffers{&(*commandBuffer)},
+	                                     .pCommandBuffers{&(*commandBuffers.at(currentFrame))},
 	                                     .signalSemaphoreCount{signalSemaphores.size()},
 	                                     .pSignalSemaphores{signalSemaphores.data()}}};
-	graphicsQueue.submit(submitInfo, *inFlightFence);
+	graphicsQueue.submit(submitInfo, *inFlightFences.at(currentFrame));
 
 	auto const swapChains{std::array{*swapchain}};
 	auto const presentInfo{vk::PresentInfoKHR{.waitSemaphoreCount{signalSemaphores.size()},
@@ -578,21 +597,71 @@ auto Application::drawFrame() -> void
 	                                          .pSwapchains{swapChains.data()},
 	                                          .pImageIndices{&imageIndex}}};
 
-	if (auto const presentResult{presentQueue.presentKHR(presentInfo)}; presentResult != vk::Result::eSuccess) {
-		throw std::runtime_error("Failed to present swapchain image");
+	if (auto const presentResult{presentQueue.presentKHR(presentInfo)}; presentResult == vk::Result::eSuboptimalKHR or framebufferResized) {
+		framebufferResized = false;
+		remakeSwapchain();
+	} else if (presentResult != vk::Result::eSuccess) {
+		throw std::runtime_error("failed to present swapchain image");
 	}
+
+	++currentFrame;
+	currentFrame %= MAX_FRAMES_IN_FLIGHT;
 }
 
-auto Application::makeSemaphore() -> vkr::Semaphore
+auto Application::makeSemaphores() -> std::vector<vkr::Semaphore>
 {
 	auto constexpr semaphoreInfo{vk::SemaphoreCreateInfo{}};
-	return {logicalDevice, semaphoreInfo};
+	std::vector<vkr::Semaphore> semaphores;
+
+	for (auto i{0u}; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		semaphores.emplace_back(logicalDevice, semaphoreInfo);
+	}
+
+	return semaphores;
 }
 
-auto Application::makeFence() -> vkr::Fence
+auto Application::makeFences() -> std::vector<vkr::Fence>
 {
 	auto constexpr fenceInfo{vk::FenceCreateInfo{.flags{vk::FenceCreateFlagBits::eSignaled}}};
-	return {logicalDevice, fenceInfo};
+	std::vector<vkr::Fence> fences;
+
+	for (auto i{0u}; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		fences.emplace_back(logicalDevice, fenceInfo);
+	}
+
+	return fences;
+}
+
+auto Application::remakeSwapchain() -> void
+{
+	auto width{0};
+	auto height{0};
+	glfwGetFramebufferSize(window.get(), &width, &height);
+	while (width == 0 or height == 0) {
+		glfwGetFramebufferSize(window.get(), &width, &height);
+		glfwWaitEvents();
+	}
+
+	logicalDevice.waitIdle();
+
+	swapchainFramebuffers.clear();
+	swapchainImageViews.clear();
+	swapchain.clear();
+
+	swapchain = makeSwapchain();
+	swapchainImageViews = makeImageViews();
+	swapchainFramebuffers = makeFramebuffers();
+}
+
+auto Application::makeWindowPointer(const std::uint32_t width, const std::uint32_t height, std::string_view windowName) -> GLFWWindowPointer
+{
+	glfwInit();
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	auto windowPtr{GLFWWindowPointer{glfwCreateWindow(width, height, windowName.data(), nullptr, nullptr)}};
+	glfwSetWindowUserPointer(windowPtr.get(), this);
+	glfwSetFramebufferSizeCallback(windowPtr.get(), frameBufferResizeCallback);
+
+	return windowPtr;
 }
 
 auto Application::QueueFamilyIndices::findGraphicsQueueFamilyIndex(vkr::PhysicalDevice const& physDev) -> std::optional<std::uint32_t>

@@ -19,7 +19,8 @@ constexpr inline auto glfwWindowDestroyer{[](auto windowPtr)
                                           }};
 using GLFWWindowPointer = std::unique_ptr<GLFWwindow, decltype(glfwWindowDestroyer)>;
 
-auto makeWindowPointer(std::uint32_t width = 800, std::uint32_t height = 600, std::string_view windowName = "empty") -> GLFWWindowPointer;
+constexpr inline auto INIT_WIDTH{800u};
+constexpr inline auto INIT_HEIGHT{800u};
 
 class Application
 {
@@ -28,7 +29,9 @@ public:
 	Application();
 	virtual ~Application();
 
+
 	//	INSTANCE PUBLIC
+	bool framebufferResized{};
 	auto run() -> void;
 
 	//	STATIC PUBLIC
@@ -55,21 +58,21 @@ public:
 
 		SwapchainSupportDetails(vkr::PhysicalDevice const&, vkr::SurfaceKHR const&);
 		[[nodiscard]] auto isAdequate() const -> bool;
+		auto operator<=>(const SwapchainSupportDetails&) const = default;
 	};
 
 private:
 	//	MEMBERS
-	uint32_t const width{800u};
-	uint32_t const height{600u};
+	std::uint32_t MAX_FRAMES_IN_FLIGHT{2u};
 	std::string windowName{"Hello Triangle"};
 	std::string applicationName{"Hello Triangle"};
 	std::uint32_t applicationVersion{VK_MAKE_API_VERSION(0, 1, 0, 0)};
 	std::string engineName{"No engine"};
 	std::uint32_t engineVersion{VK_MAKE_API_VERSION(0, 1, 0, 0)};
-	GLFWWindowPointer window{HelloTriangle::makeWindowPointer(width, height, windowName.data())};
+	GLFWWindowPointer window{makeWindowPointer(INIT_WIDTH, INIT_HEIGHT, windowName.data())};
 	vkr::Context context{};
 	std::array<char const*, 1> requiredValLayers{"VK_LAYER_KHRONOS_validation"};
-	std::array<char const*, 1> requiredDeviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+	std::array<char const*, 1> requiredDeviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME}; 
 #ifdef NDEBUG
 	bool const enableValidationLayers{false};
 #else
@@ -91,17 +94,17 @@ private:
 	vkr::SwapchainKHR swapchain{makeSwapchain()};
 	vk::Format swapchainImageFormat{chooseSwapSurfaceFormat(swapchainSupport.formats).format};
 	vk::Extent2D swapchainExtent{chooseSwapExtent(window, swapchainSupport.capabilities)};
-	std::vector<vk::Image> swapchainImages{swapchain.getImages()};
-	std::vector<vkr::ImageView> swapchainImageViews{getImageViews()};
+	std::vector<vkr::ImageView> swapchainImageViews{makeImageViews()};
 	vkr::RenderPass renderPass{makeRenderPass()};
 	vkr::PipelineLayout pipelineLayout{makeGraphicsPipeline().first};
 	vkr::Pipeline graphicsPipeline{makeGraphicsPipeline().second};
 	std::vector<vkr::Framebuffer> swapchainFramebuffers{makeFramebuffers()};
 	vkr::CommandPool commandPool{makeCommandPool()};
-	vkr::CommandBuffer commandBuffer{makeCommandBuffer()};
-	vkr::Semaphore imageAvailableSemaphore{makeSemaphore()};
-	vkr::Semaphore renderFinishedSemaphore{makeSemaphore()};
-	vkr::Fence inFlightFence{makeFence()};
+	vkr::CommandBuffers commandBuffers{makeCommandBuffers()};
+	std::vector<vkr::Semaphore> imageAvailableSemaphores{makeSemaphores()};
+	std::vector<vkr::Semaphore> renderFinishedSemaphores{makeSemaphores()};
+	std::vector<vkr::Fence> inFlightFences{makeFences()};
+	std::uint32_t currentFrame{0u};
 
 	//  INSTANCE PRIVATE
 	auto mainLoop() -> void;
@@ -112,16 +115,18 @@ private:
 	auto pickPhysicalDevice() -> vkr::PhysicalDevice;
 	auto makeDevice() -> vkr::Device;
 	auto makeSwapchain() -> vkr::SwapchainKHR;
-	auto getImageViews() -> std::vector<vkr::ImageView>;
+	auto makeImageViews() -> std::vector<vkr::ImageView>;
 	auto makeShaderModule(std::span<std::byte const>) -> vkr::ShaderModule;
 	auto makeRenderPass() -> vkr::RenderPass;
 	auto makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::Pipeline>;
 	auto makeFramebuffers() -> std::vector<vkr::Framebuffer>;
 	auto makeCommandPool() -> vkr::CommandPool;
-	[[nodiscard]] auto makeCommandBuffer() const -> vkr::CommandBuffer;
-	auto recordCommandBuffer(std::uint32_t) -> void;
-    auto makeSemaphore() -> vkr::Semaphore;
-	auto makeFence() -> vkr::Fence;
+	auto recordCommandBuffer(vkr::CommandBuffer&, std::uint32_t) -> void;
+	[[nodiscard]] auto makeCommandBuffers() const -> vkr::CommandBuffers;
+    auto makeSemaphores() -> std::vector<vkr::Semaphore>;
+	auto makeFences() -> std::vector<vkr::Fence>;
+	auto remakeSwapchain() -> void;
+	auto makeWindowPointer(std::uint32_t width = 800, std::uint32_t height = 600, std::string_view windowName = "empty") -> GLFWWindowPointer;
 
 	//	STATIC PRIVATE
 	static auto chooseSwapSurfaceFormat(std::span<vk::SurfaceFormatKHR const>) -> vk::SurfaceFormatKHR;
