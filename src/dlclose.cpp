@@ -1,1 +1,1 @@
-extern "C" int dlclose(void* ptr) { return 0; }
+extern "C" [[maybe_unused]] int dlclose([[maybe_unused]] void* ptr) { return 0; }
