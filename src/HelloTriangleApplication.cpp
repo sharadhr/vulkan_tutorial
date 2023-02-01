@@ -425,9 +425,11 @@ auto Application::makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::
 	        vk::PipelineShaderStageCreateInfo{.stage{vk::ShaderStageFlagBits::eVertex}, .module{*vertShaderModule}, .pName{"main"}}};
 	auto const fragShaderStageInfo{
 	        vk::PipelineShaderStageCreateInfo{.stage{vk::ShaderStageFlagBits::eFragment}, .module{*fragShaderModule}, .pName{"main"}}};
-
 	auto const shaderStages{std::array<vk::PipelineShaderStageCreateInfo, 2>{vertShaderStageInfo, fragShaderStageInfo}};
+
 	auto const dynamicStates{std::vector<vk::DynamicState>{vk::DynamicState::eViewport, vk::DynamicState::eScissor}};
+	auto const dynamicState{vk::PipelineDynamicStateCreateInfo{.dynamicStateCount{static_cast<std::uint32_t>(dynamicStates.size())},
+	                                                           .pDynamicStates{dynamicStates.data()}}};
 
 	auto constexpr vertexInputInfo{vk::PipelineVertexInputStateCreateInfo{}};
 	auto constexpr inputAssembly{
@@ -440,8 +442,6 @@ auto Application::makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::
 	                                 .maxDepth{1.0f}}};
 
 	auto const scissor{vk::Rect2D{.offset{0, 0}, .extent{swapchainExtent}}};
-	auto const dynamicState{vk::PipelineDynamicStateCreateInfo{.dynamicStateCount{static_cast<std::uint32_t>(dynamicStates.size())},
-	                                                           .pDynamicStates{dynamicStates.data()}}};
 	auto const viewportState{
 	        vk::PipelineViewportStateCreateInfo{.viewportCount{1u}, .pViewports{&viewport}, .scissorCount{1u}, .pScissors{&scissor}}};
 
@@ -529,9 +529,9 @@ auto Application::makeCommandBuffers() const -> vkr::CommandBuffers
 auto Application::recordCommandBuffer(vkr::CommandBuffer& commandBuffer, std::uint32_t imageIndex) -> void
 {
 	auto constexpr beginInfo{vk::CommandBufferBeginInfo{}};
-	auto constexpr clearColour{vk::ClearValue{{std::array{0.0f, 0.0f, 0.0f, 1.0f}}}};
 	commandBuffer.begin(beginInfo);
 
+	auto constexpr clearColour{vk::ClearValue{{std::array{0.0f, 0.0f, 0.0f, 1.0f}}}};
 	auto const renderPassInfo{vk::RenderPassBeginInfo{.renderPass{*renderPass},
 	                                                  .framebuffer{*swapchainFramebuffers.at(imageIndex)},
 	                                                  .renderArea{.offset{0, 0}, .extent{swapchainExtent}},
@@ -561,7 +561,7 @@ auto Application::drawFrame() -> void
 	if (auto const waitResult{logicalDevice.waitForFences(*inFlightFences.at(currentFrame), VK_TRUE, std::numeric_limits<std::uint64_t>::max())};
 	    waitResult != vk::Result::eSuccess)
 	{
-		throw std::runtime_error("failed to acquire swapchain image");
+		throw std::runtime_error("Failed to wait for fences");
 	}
 
 	auto const [acquireResult, imageIndex] =
@@ -640,10 +640,6 @@ auto Application::remakeSwapchain() -> void
 	}
 
 	logicalDevice.waitIdle();
-
-	swapchainFramebuffers.clear();
-	swapchainImageViews.clear();
-	swapchain.clear();
 
 	swapchain = makeSwapchain();
 	swapchainImageViews = makeImageViews();
