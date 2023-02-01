@@ -29,7 +29,6 @@ public:
 	Application();
 	virtual ~Application();
 
-
 	//	INSTANCE PUBLIC
 	bool framebufferResized{};
 	auto run() -> void;
@@ -58,7 +57,7 @@ public:
 
 		SwapchainSupportDetails(vkr::PhysicalDevice const&, vkr::SurfaceKHR const&);
 		[[nodiscard]] auto isAdequate() const -> bool;
-		auto operator<=>(const SwapchainSupportDetails&) const = default;
+		auto operator<=>(SwapchainSupportDetails const&) const = default;
 	};
 
 private:
@@ -72,7 +71,7 @@ private:
 	GLFWWindowPointer window{makeWindowPointer(INIT_WIDTH, INIT_HEIGHT, windowName.data())};
 	vkr::Context context{};
 	std::array<char const*, 1> requiredValLayers{"VK_LAYER_KHRONOS_validation"};
-	std::array<char const*, 1> requiredDeviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME}; 
+	std::array<char const*, 1> requiredDeviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 #ifdef NDEBUG
 	bool const enableValidationLayers{false};
 #else
@@ -123,7 +122,7 @@ private:
 	auto makeCommandPool() -> vkr::CommandPool;
 	auto recordCommandBuffer(vkr::CommandBuffer&, std::uint32_t) -> void;
 	[[nodiscard]] auto makeCommandBuffers() const -> vkr::CommandBuffers;
-    auto makeSemaphores() -> std::vector<vkr::Semaphore>;
+	auto makeSemaphores() -> std::vector<vkr::Semaphore>;
 	auto makeFences() -> std::vector<vkr::Fence>;
 	auto remakeSwapchain() -> void;
 	auto makeWindowPointer(std::uint32_t width = 800, std::uint32_t height = 600, std::string_view windowName = "empty") -> GLFWWindowPointer;

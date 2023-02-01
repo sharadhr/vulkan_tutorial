@@ -188,9 +188,7 @@ auto Application::mainLoop() -> void
 		try {
 			drawFrame();
 		} catch (vk::OutOfDateKHRError const&) {
-			if (framebufferResized) {
-				framebufferResized = false;
-			}
+			framebufferResized = false;
 			remakeSwapchain();
 		}
 	}
@@ -307,9 +305,8 @@ auto Application::chooseSwapExtent(GLFWWindowPointer const& window, vk::SurfaceC
 auto Application::makeSwapchain() -> vkr::SwapchainKHR
 {
 	auto const newSwapchainSupport{SwapchainSupportDetails{physicalDevice, surface}};
-	if (swapchainSupport != newSwapchainSupport) {
-		swapchainSupport = newSwapchainSupport;
-	}
+	swapchainSupport = newSwapchainSupport;
+
 	auto const [format, colorSpace]{chooseSwapSurfaceFormat(swapchainSupport.formats)};
 	auto const presentMode{chooseSwapPresentMode(swapchainSupport.presentModes)};
 	auto const extent{chooseSwapExtent(window, swapchainSupport.capabilities)};
@@ -398,7 +395,7 @@ auto Application::makeRenderPass() -> vkr::RenderPass
 	                                                      .stencilStoreOp{vk::AttachmentStoreOp::eDontCare},
 	                                                      .initialLayout{vk::ImageLayout::eUndefined},
 	                                                      .finalLayout{vk::ImageLayout::ePresentSrcKHR}}};
-	auto constexpr colourAttachmentRef{vk::AttachmentReference{.layout{vk::ImageLayout::eAttachmentOptimal}}};
+	auto constexpr colourAttachmentRef{vk::AttachmentReference{.layout{vk::ImageLayout::eColorAttachmentOptimal}}};
 	auto const subpass{vk::SubpassDescription{.pipelineBindPoint{vk::PipelineBindPoint::eGraphics},
 	                                          .colorAttachmentCount{1u},
 	                                          .pColorAttachments{&colourAttachmentRef}}};
@@ -634,11 +631,11 @@ auto Application::makeFences() -> std::vector<vkr::Fence>
 
 auto Application::remakeSwapchain() -> void
 {
-	auto width{0};
-	auto height{0};
-	glfwGetFramebufferSize(window.get(), &width, &height);
-	while (width == 0 or height == 0) {
-		glfwGetFramebufferSize(window.get(), &width, &height);
+	auto newWidth{0};
+	auto newHeight{0};
+	glfwGetFramebufferSize(window.get(), &newWidth, &newHeight);
+	while (newWidth == 0 or newHeight == 0) {
+		glfwGetFramebufferSize(window.get(), &newWidth, &newHeight);
 		glfwWaitEvents();
 	}
 
