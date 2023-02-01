@@ -1,1 +1,1 @@
-int dlclose(void* ptr) { return 0; }
+extern "C" int dlclose(void* ptr) { return 0; }
