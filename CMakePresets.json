@@ -111,8 +111,7 @@
       "name": "x64-win-reldbg-build",
       "displayName": "x64 Windows RelWithDebInfo Build",
       "description": "Windows 64-bit release build using Ninja with debug symbols",
-      "configurePreset": "x64-win-reldbg",
-      "verbose": true
+      "configurePreset": "x64-win-reldbg"
     },
     {
       "name": "x64-linux-dbg-build",
@@ -125,8 +124,7 @@
       "name": "x64-linux-reldbg-build",
       "displayName": "x64 Linux RelWithDebInfo Build",
       "description": "Linux 64-bit release build using Ninja with debug symbols",
-      "configurePreset": "x64-linux-reldbg",
-      "verbose": true
+      "configurePreset": "x64-linux-reldbg"
     }
   ]
 }
