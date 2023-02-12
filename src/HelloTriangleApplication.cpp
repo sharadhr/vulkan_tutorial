@@ -20,7 +20,7 @@ auto getGLFWInstanceExtensions() -> std::vector<char const*>
 {
 	static auto glfwExtensionCount{0u};
 	static auto const glfwExtensions{glfwGetRequiredInstanceExtensions(&glfwExtensionCount)};
-	static auto const extensions{std::vector<char const*>(glfwExtensions, glfwExtensions + glfwExtensionCount)};
+	static auto const extensions{std::vector(glfwExtensions, glfwExtensions + glfwExtensionCount)};
 
 	return extensions;
 }
@@ -56,40 +56,40 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc(vk::DebugUtilsMessageSeverityF
                                                   vk::DebugUtilsMessengerCallbackDataEXT const* pCallbackData,
                                                   [[maybe_unused]] void* pUserData)
 {
-	static auto constexpr header{R"({messageSeverity}: {messageType}:
-	Message ID Name   = <{pMessageIdName}>
-	Message ID Number = {messageIDNumber}
-	message           = <{pMessage}>
-)"sv};
-	auto out{fmt::memory_buffer()};
+	static auto constexpr header = R"({severity} --- {type}:
+	Message ID Name   = <{id}>
+	Message ID Number = {number}
+	message           = <{message}>
+)"sv;
+	auto out{fmt::memory_buffer{}};
 
 	fmt::format_to(std::back_inserter(out),
 	               header,
-	               "messageSeverity"_a = vk::to_string(messageSeverity),
-	               "messageType"_a = vk::to_string(messageType),
-	               "pMessageIdName"_a = pCallbackData->pMessageIdName,
-	               "messageIDNumber"_a = pCallbackData->messageIdNumber,
-	               "pMessage"_a = pCallbackData->pMessage);
+	               "severity"_a = to_string(messageSeverity),
+	               "type"_a = to_string(messageType),
+	               "id"_a = pCallbackData->pMessageIdName,
+	               "number"_a = pCallbackData->messageIdNumber,
+	               "message"_a = pCallbackData->pMessage);
 
 	if (pCallbackData->queueLabelCount > 0) {
 		static auto constexpr queueLabelsHeader{"\tQueue Labels:\n"sv};
-		static auto constexpr queueLabel{"\t\tlabelName = <{pLabelName}>\n"sv};
+		static auto constexpr queueLabel{"\t\tlabelName = <{labelName}>\n"sv};
 		auto const labels{std::span{pCallbackData->pQueueLabels, pCallbackData->queueLabelCount}};
 
 		fmt::format_to(std::back_inserter(out), queueLabelsHeader);
 		std::ranges::for_each(labels,
-		                      [&](auto const& label) { fmt::format_to(std::back_inserter(out), queueLabel, "pLabelName"_a = label.pLabelName); });
+		                      [&](auto const& label) { fmt::format_to(std::back_inserter(out), queueLabel, "labelName"_a = label.pLabelName); });
 	}
 
 	if (pCallbackData->cmdBufLabelCount > 0) {
 		static auto constexpr commandBufferLabelsHeader{"\tCommand Buffer Labels:\n"sv};
-		static auto constexpr commandBufferLabel{"\t\tlabelName = <{pLabelName}>\n"sv};
+		static auto constexpr commandBufferLabel{"\t\tlabelName = <{labelName}>\n"sv};
 		auto const labels{std::span{pCallbackData->pCmdBufLabels, pCallbackData->cmdBufLabelCount}};
 
 		fmt::format_to(std::back_inserter(out), commandBufferLabelsHeader);
 		std::ranges::for_each(labels,
 		                      [&](auto const& label)
-		                      { fmt::format_to(std::back_inserter(out), commandBufferLabel, "pLabelName"_a = label.pLabelName); });
+		                      { fmt::format_to(std::back_inserter(out), commandBufferLabel, "labelName"_a = label.pLabelName); });
 	}
 
 	if (pCallbackData->objectCount > 0) {
@@ -121,10 +121,10 @@ auto makeDebugMessengerCreateInfoEXT() -> vk::DebugUtilsMessengerCreateInfoEXT
 	static auto constexpr severityFlags{vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError};
 	static auto constexpr typeFlags{vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
 	                                vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance};
-	auto const debugCreateInfo{
-	        vk::DebugUtilsMessengerCreateInfoEXT{.messageSeverity{severityFlags},
-	                                             .messageType{typeFlags},
-	                                             .pfnUserCallback{reinterpret_cast<PFN_vkDebugUtilsMessengerCallbackEXT>(&debugMessageFunc)}}};
+	auto const debugCreateInfo{vk::DebugUtilsMessengerCreateInfoEXT{{},
+	                                                                severityFlags,
+	                                                                typeFlags,
+	                                                                reinterpret_cast<PFN_vkDebugUtilsMessengerCallbackEXT>(&debugMessageFunc)}};
 
 	return debugCreateInfo;
 }
@@ -170,7 +170,7 @@ auto chooseSwapPresentMode(std::span<vk::PresentModeKHR const> availablePresentM
 
 auto frameBufferResizeCallback = [](GLFWwindow* window, [[maybe_unused]] int width, [[maybe_unused]] int height)
 {
-	const auto app{static_cast<HelloTriangle::Application*>(glfwGetWindowUserPointer(window))};
+	const auto app{static_cast<Application*>(glfwGetWindowUserPointer(window))};
 	app->framebufferResized = true;
 };
 }// namespace
@@ -200,21 +200,16 @@ auto Application::makeInstance() -> vkr::Instance
 	if (enableValidationLayers && !checkValidationLayerSupport(context, requiredValLayers)) {
 		throw std::runtime_error("validation layers requested but not available");
 	}
-	auto const applicationInfo{vk::ApplicationInfo{.pApplicationName{applicationName.data()},
-	                                               .applicationVersion{applicationVersion},
-	                                               .pEngineName{engineName.data()},
-	                                               .engineVersion{engineVersion},
-	                                               .apiVersion{VK_API_VERSION_1_3}}};
+	auto const applicationInfo{vk::ApplicationInfo{applicationName.data(), applicationVersion, engineName.data(), engineVersion, VK_API_VERSION_1_3}};
 	auto const debugCreateInfo{makeDebugMessengerCreateInfoEXT()};
 	auto const extensions{getRequiredExtensions(enableValidationLayers)};
-	auto const instanceCreateInfo{
-	        vk::InstanceCreateInfo{.pNext{enableValidationLayers ? &debugCreateInfo : nullptr},
-	                               .pApplicationInfo{&applicationInfo},
-	                               .enabledLayerCount{static_cast<uint32_t>(enableValidationLayers ? requiredValLayers.size() : 0u)},
-	                               .ppEnabledLayerNames{enableValidationLayers ? requiredValLayers.data() : nullptr},
-	                               .enabledExtensionCount{static_cast<uint32_t>(extensions.size())},
-	                               .ppEnabledExtensionNames{extensions.data()}}};
 
+	if (enableValidationLayers) {
+		auto const instanceCreateInfo{vk::InstanceCreateInfo{{}, &applicationInfo, requiredValLayers, extensions, &debugCreateInfo}};
+		return {context, instanceCreateInfo};
+	}
+
+	auto const instanceCreateInfo{vk::InstanceCreateInfo{{}, &applicationInfo, {}, extensions}};
 	return {context, instanceCreateInfo};
 }
 
@@ -226,7 +221,7 @@ auto Application::makeDebugMessenger() -> vkr::DebugUtilsMessengerEXT
 
 auto Application::makeSurface() -> vkr::SurfaceKHR
 {
-	if (auto const result{glfwCreateWindowSurface(static_cast<VkInstance>(*instance), window.get(), nullptr, &sfc)}; result != VK_SUCCESS) {
+	if (auto const result{glfwCreateWindowSurface(*instance, window.get(), nullptr, &sfc)}; result != VK_SUCCESS) {
 		throw std::runtime_error("failed to create window surface");
 	}
 
@@ -248,25 +243,24 @@ auto Application::pickPhysicalDevice() -> vkr::PhysicalDevice
 
 auto Application::makeDevice() -> vkr::Device
 {
-	auto constexpr queuePriority{1.0f};
+	auto constexpr queuePriorities{std::array{1.0f}};
 	auto queueCreateInfos{std::vector<vk::DeviceQueueCreateInfo>{}};
-	auto uniqueQueueFamilies{std::set{indices.graphicsFamily.value(), indices.presentFamily.value()}};
+	auto uniqueQueueFamilies{std::set{queueFamilyIndices.graphicsFamily.value(), queueFamilyIndices.presentFamily.value()}};
 
 	std::ranges::transform(uniqueQueueFamilies,
 	                       std::back_inserter(queueCreateInfos),
-	                       [&](auto const& queueFamily) -> vk::DeviceQueueCreateInfo
-	                       { return {.queueFamilyIndex{queueFamily}, .queueCount{1}, .pQueuePriorities{&queuePriority}}; });
+	                       [&](auto const& queueFamily) -> vk::DeviceQueueCreateInfo {
+		                       return {{}, queueFamily, queuePriorities};
+	                       });
 
 	auto constexpr deviceFeatures{vk::PhysicalDeviceFeatures{}};
-	auto const deviceCreateInfo{
-	        vk::DeviceCreateInfo{.queueCreateInfoCount{static_cast<std::uint32_t>(queueCreateInfos.size())},
-	                             .pQueueCreateInfos{queueCreateInfos.data()},
-	                             .enabledLayerCount{static_cast<std::uint32_t>(enableValidationLayers ? requiredValLayers.size() : 0u)},
-	                             .ppEnabledLayerNames{enableValidationLayers ? requiredValLayers.data() : nullptr},
-	                             .enabledExtensionCount{static_cast<std::uint32_t>(requiredDeviceExtensions.size())},
-	                             .ppEnabledExtensionNames{requiredDeviceExtensions.data()},
-	                             .pEnabledFeatures{&deviceFeatures}}};
 
+	if (enableValidationLayers) {
+		auto const deviceCreateInfo{vk::DeviceCreateInfo{{}, queueCreateInfos, requiredValLayers, requiredDeviceExtensions, &deviceFeatures}};
+		return {physicalDevice, deviceCreateInfo};
+	}
+
+	auto const deviceCreateInfo{vk::DeviceCreateInfo({}, queueCreateInfos, {}, requiredDeviceExtensions, &deviceFeatures)};
 	return {physicalDevice, deviceCreateInfo};
 }
 
@@ -294,7 +288,7 @@ auto Application::chooseSwapExtent(GLFWWindowPointer const& window, vk::SurfaceC
 	static int height;
 	glfwGetFramebufferSize(window.get(), &width, &height);
 
-	static auto actualExtent{vk::Extent2D{.width{static_cast<std::uint32_t>(width)}, .height{static_cast<std::uint32_t>(height)}}};
+	static auto actualExtent{vk::Extent2D{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)}};
 
 	actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
 	actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
@@ -311,24 +305,23 @@ auto Application::makeSwapchain() -> vkr::SwapchainKHR
 	auto const presentMode{chooseSwapPresentMode(swapchainSupport.presentModes)};
 	auto const extent{chooseSwapExtent(window, swapchainSupport.capabilities)};
 	auto const imageCount{std::max(swapchainSupport.capabilities.minImageCount + 1, swapchainSupport.capabilities.maxImageCount)};
-	auto const indicesVec{std::vector{indices.graphicsFamily.value(), indices.presentFamily.value()}};
+	auto const indices = queueFamilyIndices.indices();
 
 	auto swapchainCreateInfo{vk::SwapchainCreateInfoKHR{
-	        .surface{*surface},
-	        .minImageCount{imageCount},
-	        .imageFormat{format},
-	        .imageColorSpace{colorSpace},
-	        .imageExtent{extent},
-	        .imageArrayLayers{1},
-	        .imageUsage{vk::ImageUsageFlagBits::eColorAttachment},
-	        .imageSharingMode{indices.graphicsFamily != indices.presentFamily ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive},
-	        .queueFamilyIndexCount{indices.graphicsFamily != indices.presentFamily ? static_cast<std::uint32_t>(indicesVec.size()) : 0u},
-	        .pQueueFamilyIndices{indices.graphicsFamily != indices.presentFamily ? indicesVec.data() : nullptr},
-	        .preTransform{swapchainSupport.capabilities.currentTransform},
-	        .compositeAlpha{vk::CompositeAlphaFlagBitsKHR::eOpaque},
-	        .presentMode{presentMode},
-	        .clipped{VK_TRUE},
-	        .oldSwapchain{VK_NULL_HANDLE}}};
+	        {},
+	        *surface,
+	        imageCount,
+	        format,
+	        colorSpace,
+	        extent,
+	        1,
+	        vk::ImageUsageFlagBits::eColorAttachment,
+	        queueFamilyIndices.graphicsFamily != queueFamilyIndices.presentFamily ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
+	        indices,
+	        swapchainSupport.capabilities.currentTransform,
+	        vk::CompositeAlphaFlagBitsKHR::eOpaque,
+	        presentMode,
+	        VK_TRUE}};
 
 	if (format != swapchainImageFormat or extent != swapchainExtent) {
 		swapchainImageFormat = format;
@@ -345,22 +338,15 @@ auto Application::makeImageViews() -> std::vector<vkr::ImageView>
 	                       std::back_inserter(imageViews),
 	                       [this](auto const& image)
 	                       {
-		                       auto const imageCreateInfo{vk::ImageViewCreateInfo{.image{image},
-		                                                                          .viewType{vk::ImageViewType::e2D},
-		                                                                          .format{swapchainImageFormat},
-		                                                                          .components{.r{vk::ComponentSwizzle::eIdentity},
-		                                                                                      .g{vk::ComponentSwizzle::eIdentity},
-		                                                                                      .b{vk::ComponentSwizzle::eIdentity},
-		                                                                                      .a{vk::ComponentSwizzle::eIdentity}},
-		                                                                          .subresourceRange{.aspectMask{vk::ImageAspectFlagBits::eColor},
-		                                                                                            .baseMipLevel{0u},
-		                                                                                            .levelCount{1u},
-		                                                                                            .baseArrayLayer{0u},
-		                                                                                            .layerCount{1u}}}};
+		                       auto const imageCreateInfo{vk::ImageViewCreateInfo{{},
+		                                                                          image,
+		                                                                          vk::ImageViewType::e2D,
+		                                                                          swapchainImageFormat,
+		                                                                          {},
+		                                                                          {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}}};
 
 		                       return vkr::ImageView{logicalDevice, imageCreateInfo};
 	                       });
-
 	return imageViews;
 }
 
@@ -379,36 +365,31 @@ auto Application::readFile(fs::path const& filePath) -> std::vector<std::byte>
 
 auto Application::makeShaderModule(std::span<std::byte const> shaderCode) -> vkr::ShaderModule
 {
-	auto const shaderModuleCreateInfo{
-	        vk::ShaderModuleCreateInfo{.codeSize{shaderCode.size()}, .pCode{reinterpret_cast<uint32_t const*>(shaderCode.data())}}};
+	auto const shaderModuleCreateInfo{vk::ShaderModuleCreateInfo{{}, shaderCode.size(), reinterpret_cast<uint32_t const*>(shaderCode.data())}};
 
 	return {logicalDevice, shaderModuleCreateInfo};
 }
 
 auto Application::makeRenderPass() -> vkr::RenderPass
 {
-	auto const colourAttachment{vk::AttachmentDescription{.format{swapchainImageFormat},
-	                                                      .samples{vk::SampleCountFlagBits::e1},
-	                                                      .loadOp{vk::AttachmentLoadOp::eClear},
-	                                                      .storeOp{vk::AttachmentStoreOp::eStore},
-	                                                      .stencilLoadOp{vk::AttachmentLoadOp::eDontCare},
-	                                                      .stencilStoreOp{vk::AttachmentStoreOp::eDontCare},
-	                                                      .initialLayout{vk::ImageLayout::eUndefined},
-	                                                      .finalLayout{vk::ImageLayout::ePresentSrcKHR}}};
-	auto constexpr colourAttachmentRef{vk::AttachmentReference{.layout{vk::ImageLayout::eColorAttachmentOptimal}}};
-	auto const subpass{vk::SubpassDescription{.pipelineBindPoint{vk::PipelineBindPoint::eGraphics},
-	                                          .colorAttachmentCount{1u},
-	                                          .pColorAttachments{&colourAttachmentRef}}};
-	auto constexpr dependency{vk::SubpassDependency{.srcSubpass{VK_SUBPASS_EXTERNAL},
-	                                                .srcStageMask{vk::PipelineStageFlagBits::eColorAttachmentOutput},
-	                                                .dstStageMask{vk::PipelineStageFlagBits::eColorAttachmentOutput},
-	                                                .dstAccessMask = {vk::AccessFlagBits::eColorAttachmentWrite}}};
-	auto const renderPassInfo{vk::RenderPassCreateInfo{.attachmentCount{1u},
-	                                                   .pAttachments{&colourAttachment},
-	                                                   .subpassCount{1u},
-	                                                   .pSubpasses{&subpass},
-	                                                   .dependencyCount{1u},
-	                                                   .pDependencies{&dependency}}};
+	auto const colourAttachment{vk::AttachmentDescription{{},
+	                                                      swapchainImageFormat,
+	                                                      vk::SampleCountFlagBits::e1,
+	                                                      vk::AttachmentLoadOp::eClear,
+	                                                      vk::AttachmentStoreOp::eStore,
+	                                                      vk::AttachmentLoadOp::eDontCare,
+	                                                      vk::AttachmentStoreOp::eDontCare,
+	                                                      vk::ImageLayout::eUndefined,
+	                                                      vk::ImageLayout::ePresentSrcKHR}};
+	auto constexpr colourAttachmentRef{vk::AttachmentReference{{0}, vk::ImageLayout::eColorAttachmentOptimal}};
+	auto const subpass{vk::SubpassDescription{{}, vk::PipelineBindPoint::eGraphics, 0, nullptr, 1, &colourAttachmentRef}};
+	auto constexpr dependency{vk::SubpassDependency{VK_SUBPASS_EXTERNAL,
+	                                                {},
+	                                                vk::PipelineStageFlagBits::eColorAttachmentOutput,
+	                                                vk::PipelineStageFlagBits::eColorAttachmentOutput,
+	                                                {},
+	                                                vk::AccessFlagBits::eColorAttachmentWrite}};
+	auto const renderPassInfo{vk::RenderPassCreateInfo{{}, 1, &colourAttachment, 1, &subpass, 1, &dependency}};
 
 	return {logicalDevice, renderPassInfo};
 }
@@ -421,69 +402,65 @@ auto Application::makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::
 	auto const vertShaderModule{makeShaderModule(vertShaderCode)};
 	auto const fragShaderModule{makeShaderModule(fragShaderCode)};
 
-	auto const vertShaderStageInfo{
-	        vk::PipelineShaderStageCreateInfo{.stage{vk::ShaderStageFlagBits::eVertex}, .module{*vertShaderModule}, .pName{"main"}}};
-	auto const fragShaderStageInfo{
-	        vk::PipelineShaderStageCreateInfo{.stage{vk::ShaderStageFlagBits::eFragment}, .module{*fragShaderModule}, .pName{"main"}}};
-	auto const shaderStages{std::array<vk::PipelineShaderStageCreateInfo, 2>{vertShaderStageInfo, fragShaderStageInfo}};
+	auto const vertShaderStageInfo{vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eVertex, *vertShaderModule, "main"}};
+	auto const fragShaderStageInfo{vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main"}};
+	auto const shaderStages{std::array{vertShaderStageInfo, fragShaderStageInfo}};
 
-	auto const dynamicStates{std::vector<vk::DynamicState>{vk::DynamicState::eViewport, vk::DynamicState::eScissor}};
-	auto const dynamicState{vk::PipelineDynamicStateCreateInfo{.dynamicStateCount{static_cast<std::uint32_t>(dynamicStates.size())},
-	                                                           .pDynamicStates{dynamicStates.data()}}};
+	auto constexpr dynamicStates{std::array{vk::DynamicState::eViewport, vk::DynamicState::eScissor}};
+	auto const dynamicState{vk::PipelineDynamicStateCreateInfo{{}, dynamicStates}};
 
 	auto constexpr vertexInputInfo{vk::PipelineVertexInputStateCreateInfo{}};
-	auto constexpr inputAssembly{
-	        vk::PipelineInputAssemblyStateCreateInfo{.topology{vk::PrimitiveTopology::eTriangleList}, .primitiveRestartEnable{VK_FALSE}}};
-	auto const viewport{vk::Viewport{.x{0.0f},
-	                                 .y{0.0f},
-	                                 .width{static_cast<float>(swapchainExtent.width)},
-	                                 .height{static_cast<float>(swapchainExtent.height)},
-	                                 .minDepth{0.0f},
-	                                 .maxDepth{1.0f}}};
+	auto constexpr inputAssembly{vk::PipelineInputAssemblyStateCreateInfo{{}, vk::PrimitiveTopology::eTriangleList, VK_FALSE}};
+	auto const viewport{vk::Viewport{0.0f, 0.0f, static_cast<float>(swapchainExtent.width), static_cast<float>(swapchainExtent.height), 0.0f, 1.0f}};
 
-	auto const scissor{vk::Rect2D{.offset{0, 0}, .extent{swapchainExtent}}};
-	auto const viewportState{
-	        vk::PipelineViewportStateCreateInfo{.viewportCount{1u}, .pViewports{&viewport}, .scissorCount{1u}, .pScissors{&scissor}}};
+	auto const scissor{vk::Rect2D{{0, 0}, swapchainExtent}};
+	auto const viewportState{vk::PipelineViewportStateCreateInfo{{}, 1u, &viewport, 1u, &scissor}};
 
-	auto constexpr rasteriser{vk::PipelineRasterizationStateCreateInfo{.depthClampEnable{VK_FALSE},
-	                                                                   .rasterizerDiscardEnable{VK_FALSE},
-	                                                                   .polygonMode{vk::PolygonMode::eFill},
-	                                                                   .cullMode{vk::CullModeFlagBits::eBack},
-	                                                                   .frontFace{vk::FrontFace::eClockwise},
-	                                                                   .depthBiasEnable{VK_FALSE},
-	                                                                   .lineWidth{1.0f}}};
+	auto constexpr rasteriser{vk::PipelineRasterizationStateCreateInfo{{},
+	                                                                   VK_FALSE,
+	                                                                   VK_FALSE,
+	                                                                   vk::PolygonMode::eFill,
+	                                                                   vk::CullModeFlagBits::eBack,
+	                                                                   vk::FrontFace::eClockwise,
+	                                                                   VK_FALSE,
+	                                                                   {},
+	                                                                   {},
+	                                                                   {},
+	                                                                   1.0f}};
 
-	auto constexpr multisampling{
-	        vk::PipelineMultisampleStateCreateInfo{.rasterizationSamples{vk::SampleCountFlagBits::e1}, .sampleShadingEnable{VK_FALSE}}};
+	auto constexpr multisampling{vk::PipelineMultisampleStateCreateInfo{{}, vk::SampleCountFlagBits::e1, VK_FALSE}};
 
-	auto constexpr colourBlendAttachment{
-	        vk::PipelineColorBlendAttachmentState{.blendEnable{VK_FALSE},
-	                                              .srcColorBlendFactor{vk::BlendFactor::eOne},
-	                                              .srcAlphaBlendFactor{vk::BlendFactor::eOne},
-	                                              .colorWriteMask{vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eB |
-	                                                              vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eA}}};
+	auto constexpr colourBlendAttachment{vk::PipelineColorBlendAttachmentState{
+	        {},
+	        vk::BlendFactor::eOne,
+	        vk::BlendFactor::eOne,
+	        {},
+	        {},
+	        {},
+	        {},
+	        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eA}};
 
-	auto const colourBlending{vk::PipelineColorBlendStateCreateInfo{.logicOpEnable{VK_FALSE},
-	                                                                .logicOp{vk::LogicOp::eCopy},
-	                                                                .attachmentCount{1u},
-	                                                                .pAttachments{&colourBlendAttachment}}};
+	auto const colourBlending{vk::PipelineColorBlendStateCreateInfo{{}, VK_FALSE, vk::LogicOp::eCopy, 1u, &colourBlendAttachment}};
 
 	auto constexpr pipelineLayoutInfo{vk::PipelineLayoutCreateInfo{}};
 	auto pipelineLayoutRet{vkr::PipelineLayout{logicalDevice, pipelineLayoutInfo}};
 
-	auto const pipelineInfo{vk::GraphicsPipelineCreateInfo{.stageCount{2u},
-	                                                       .pStages{shaderStages.data()},
-	                                                       .pVertexInputState{&vertexInputInfo},
-	                                                       .pInputAssemblyState{&inputAssembly},
-	                                                       .pViewportState{&viewportState},
-	                                                       .pRasterizationState{&rasteriser},
-	                                                       .pMultisampleState{&multisampling},
-	                                                       .pColorBlendState{&colourBlending},
-	                                                       .pDynamicState{&dynamicState},
-	                                                       .layout{*pipelineLayoutRet},
-	                                                       .renderPass{*renderPass},
-	                                                       .subpass{0u},
-	                                                       .basePipelineIndex{-1}}};
+	auto const pipelineInfo{vk::GraphicsPipelineCreateInfo({},
+	                                                       shaderStages,
+	                                                       &vertexInputInfo,
+	                                                       &inputAssembly,
+	                                                       {},
+	                                                       &viewportState,
+	                                                       &rasteriser,
+	                                                       &multisampling,
+	                                                       {},
+	                                                       &colourBlending,
+	                                                       &dynamicState,
+	                                                       *pipelineLayoutRet,
+	                                                       *renderPass,
+	                                                       0u,
+	                                                       {},
+	                                                       -1)};
 
 	return {std::move(pipelineLayoutRet), vkr::Pipeline{logicalDevice, nullptr, pipelineInfo}};
 }
@@ -492,64 +469,49 @@ auto Application::makeFramebuffers() -> std::vector<vkr::Framebuffer>
 {
 	std::vector<vkr::Framebuffer> framebuffers;
 
-	std::ranges::transform(swapchainImageViews,
-	                       std::back_inserter(framebuffers),
-	                       [&](auto const& imageView)
-	                       {
-		                       auto const framebufferInfo{vk::FramebufferCreateInfo{.renderPass{*renderPass},
-		                                                                            .attachmentCount{1u},
-		                                                                            .pAttachments{&(*imageView)},
-		                                                                            .width{swapchainExtent.width},
-		                                                                            .height{swapchainExtent.height},
-		                                                                            .layers{1u}}};
+	std::ranges::transform(
+	        swapchainImageViews,
+	        std::back_inserter(framebuffers),
+	        [&](auto const& imageView)
+	        {
+		        auto const framebufferInfo{
+		                vk::FramebufferCreateInfo{{}, *renderPass, 1u, &(*imageView), swapchainExtent.width, swapchainExtent.height, 1u}};
 
-		                       return vkr::Framebuffer{logicalDevice, framebufferInfo};
-	                       });
+		        return vkr::Framebuffer{logicalDevice, framebufferInfo};
+	        });
 
 	return framebuffers;
 }
 
 auto Application::makeCommandPool() -> vkr::CommandPool
 {
-	auto const poolInfo{
-	        vk::CommandPoolCreateInfo{.flags{vk::CommandPoolCreateFlagBits::eResetCommandBuffer}, .queueFamilyIndex{indices.graphicsFamily.value()}}};
+	auto const poolInfo{vk::CommandPoolCreateInfo{vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queueFamilyIndices.graphicsFamily.value()}};
 
 	return {logicalDevice, poolInfo};
 }
 
 auto Application::makeCommandBuffers() const -> vkr::CommandBuffers
 {
-	auto const allocInfo{vk::CommandBufferAllocateInfo{.commandPool{*commandPool},
-	                                                   .level{vk::CommandBufferLevel::ePrimary},
-	                                                   .commandBufferCount{MAX_FRAMES_IN_FLIGHT}}};
+	auto const allocInfo{vk::CommandBufferAllocateInfo{*commandPool, vk::CommandBufferLevel::ePrimary, MAX_FRAMES_IN_FLIGHT}};
 
 	return {logicalDevice, allocInfo};
 }
 
-auto Application::recordCommandBuffer(vkr::CommandBuffer& commandBuffer, std::uint32_t imageIndex) -> void
+auto Application::recordCommandBuffer(vkr::CommandBuffer const& commandBuffer, std::uint32_t imageIndex) -> void
 {
 	auto constexpr beginInfo{vk::CommandBufferBeginInfo{}};
 	commandBuffer.begin(beginInfo);
 
 	auto constexpr clearColour{vk::ClearValue{{std::array{0.0f, 0.0f, 0.0f, 1.0f}}}};
-	auto const renderPassInfo{vk::RenderPassBeginInfo{.renderPass{*renderPass},
-	                                                  .framebuffer{*swapchainFramebuffers.at(imageIndex)},
-	                                                  .renderArea{.offset{0, 0}, .extent{swapchainExtent}},
-	                                                  .clearValueCount{1},
-	                                                  .pClearValues{&clearColour}}};
+	auto const renderPassInfo{vk::RenderPassBeginInfo{*renderPass, *swapchainFramebuffers.at(imageIndex), {{}, swapchainExtent}, 1u, &clearColour}};
 
 	commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
 
-	auto const viewport{vk::Viewport{.x{0.0f},
-	                                 .y{0.0f},
-	                                 .width{static_cast<float>(swapchainExtent.width)},
-	                                 .height{static_cast<float>(swapchainExtent.height)},
-	                                 .minDepth{0.0f},
-	                                 .maxDepth{1.0f}}};
+	auto const viewport{vk::Viewport{0.0f, 0.0f, static_cast<float>(swapchainExtent.width), static_cast<float>(swapchainExtent.height), 0.0f, 1.0f}};
 	commandBuffer.setViewport(0, viewport);
 
-	auto const scissor{vk::Rect2D{.offset{0, 0}, .extent{swapchainExtent}}};
+	auto const scissor{vk::Rect2D{{}, swapchainExtent}};
 	commandBuffer.setScissor(0, scissor);
 	commandBuffer.draw(3, 1, 0, 0);
 	commandBuffer.endRenderPass();
@@ -558,41 +520,32 @@ auto Application::recordCommandBuffer(vkr::CommandBuffer& commandBuffer, std::ui
 
 auto Application::drawFrame() -> void
 {
-	if (auto const waitResult{logicalDevice.waitForFences(*inFlightFences.at(currentFrame), VK_TRUE, std::numeric_limits<std::uint64_t>::max())};
+	if (auto const waitResult{logicalDevice.waitForFences(*inFlightFences.at(currentFrameIndex), VK_TRUE, std::numeric_limits<std::uint64_t>::max())};
 	    waitResult != vk::Result::eSuccess)
 	{
 		throw std::runtime_error("Failed to wait for fences");
 	}
 
 	auto const [acquireResult, imageIndex] =
-	        swapchain.acquireNextImage(std::numeric_limits<std::uint64_t>::max(), *imageAvailableSemaphores.at(currentFrame));
+	        swapchain.acquireNextImage(std::numeric_limits<std::uint64_t>::max(), *imageAvailableSemaphores.at(currentFrameIndex));
 	if (acquireResult != vk::Result::eSuccess and acquireResult != vk::Result::eSuboptimalKHR) {
 		throw std::runtime_error{"Failed to acquire swapchain image"};
 	}
 
-	logicalDevice.resetFences(*inFlightFences.at(currentFrame));
+	logicalDevice.resetFences(*inFlightFences.at(currentFrameIndex));
 
-	commandBuffers.at(currentFrame).reset();
-	recordCommandBuffer(commandBuffers.at(currentFrame), imageIndex);
+	commandBuffers.at(currentFrameIndex).reset();
+	recordCommandBuffer(commandBuffers.at(currentFrameIndex), imageIndex);
 
-	auto const waitSemaphores{std::array{*imageAvailableSemaphores.at(currentFrame)}};
-	auto const signalSemaphores{std::array{*renderFinishedSemaphores.at(currentFrame)}};
+	auto const waitSemaphores{*imageAvailableSemaphores.at(currentFrameIndex)};
+	auto const signalSemaphores{*renderFinishedSemaphores.at(currentFrameIndex)};
+	auto const submitCommandBuffers{*commandBuffers.at(currentFrameIndex)};
 	auto constexpr waitStages{vk::Flags{vk::PipelineStageFlagBits::eColorAttachmentOutput}};
-	auto const submitInfo{vk::SubmitInfo{.waitSemaphoreCount{waitSemaphores.size()},
-	                                     .pWaitSemaphores{waitSemaphores.data()},
-	                                     .pWaitDstStageMask{&waitStages},
-	                                     .commandBufferCount{1u},
-	                                     .pCommandBuffers{&(*commandBuffers.at(currentFrame))},
-	                                     .signalSemaphoreCount{signalSemaphores.size()},
-	                                     .pSignalSemaphores{signalSemaphores.data()}}};
-	graphicsQueue.submit(submitInfo, *inFlightFences.at(currentFrame));
+	auto const submitInfo{vk::SubmitInfo{waitSemaphores, waitStages, submitCommandBuffers, signalSemaphores}};
 
-	auto const swapChains{std::array{*swapchain}};
-	auto const presentInfo{vk::PresentInfoKHR{.waitSemaphoreCount{signalSemaphores.size()},
-	                                          .pWaitSemaphores{signalSemaphores.data()},
-	                                          .swapchainCount{swapChains.size()},
-	                                          .pSwapchains{swapChains.data()},
-	                                          .pImageIndices{&imageIndex}}};
+	graphicsQueue.submit(submitInfo, *inFlightFences.at(currentFrameIndex));
+
+	auto const presentInfo{vk::PresentInfoKHR{signalSemaphores, *swapchain, imageIndex}};
 
 	if (auto const presentResult{presentQueue.presentKHR(presentInfo)}; presentResult == vk::Result::eSuboptimalKHR or framebufferResized) {
 		framebufferResized = false;
@@ -601,8 +554,8 @@ auto Application::drawFrame() -> void
 		throw std::runtime_error("failed to present swapchain image");
 	}
 
-	++currentFrame;
-	currentFrame %= MAX_FRAMES_IN_FLIGHT;
+	++currentFrameIndex;
+	currentFrameIndex %= MAX_FRAMES_IN_FLIGHT;
 }
 
 auto Application::makeSemaphores() -> std::vector<vkr::Semaphore>
@@ -619,7 +572,7 @@ auto Application::makeSemaphores() -> std::vector<vkr::Semaphore>
 
 auto Application::makeFences() -> std::vector<vkr::Fence>
 {
-	auto constexpr fenceInfo{vk::FenceCreateInfo{.flags{vk::FenceCreateFlagBits::eSignaled}}};
+	auto constexpr fenceInfo{vk::FenceCreateInfo{vk::FenceCreateFlagBits::eSignaled}};
 	std::vector<vkr::Fence> fences;
 
 	for (auto i{0u}; i < MAX_FRAMES_IN_FLIGHT; ++i) {
@@ -629,7 +582,7 @@ auto Application::makeFences() -> std::vector<vkr::Fence>
 	return fences;
 }
 
-auto Application::remakeSwapchain() -> void
+auto HelloTriangle::Application::remakeSwapchain() -> void
 {
 	auto newWidth{0};
 	auto newHeight{0};
@@ -640,6 +593,10 @@ auto Application::remakeSwapchain() -> void
 	}
 
 	logicalDevice.waitIdle();
+
+	swapchainFramebuffers.clear();
+	swapchainImageViews.clear();
+	swapchain.clear();
 
 	swapchain = makeSwapchain();
 	swapchainImageViews = makeImageViews();
@@ -692,6 +649,20 @@ Application::QueueFamilyIndices::QueueFamilyIndices(vkr::PhysicalDevice const& p
 {}
 
 auto Application::QueueFamilyIndices::isComplete() const -> bool { return graphicsFamily.has_value() and presentFamily.has_value(); }
+
+auto Application::QueueFamilyIndices::indices() const -> std::vector<std::uint32_t>
+{
+	static auto indices{std::vector<std::uint32_t>{}};
+	indices.reserve(2);
+
+	if (graphicsFamily.has_value()) {
+		indices.push_back(*graphicsFamily);
+	}
+	if (presentFamily.has_value() and *presentFamily != *graphicsFamily) {
+		indices.push_back(*presentFamily);
+	}
+	return indices;
+}
 
 Application::SwapchainSupportDetails::SwapchainSupportDetails(vkr::PhysicalDevice const& physDev, vkr::SurfaceKHR const& surface)
     : capabilities{physDev.getSurfaceCapabilitiesKHR(*surface)},
