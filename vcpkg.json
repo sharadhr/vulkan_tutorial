@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "vulkan-tutorial",
+  "version": "0.0.1",
+  "description": "Vulkan Tutorial",
+  "dependencies": [
+    "vulkan",
+    "glfw3",
+    "glm",
+    "stb",
+    "fmt"
+  ]
+}
