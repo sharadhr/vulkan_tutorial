@@ -1,11 +1,17 @@
 #pragma once
 
 #include <GLFW/glfw3.h>
+#include <cstdint>
 #include <filesystem>
-#include <memory>
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 #include <optional>
 #include <ranges>
 #include <string>
+#include <utility>
+#include <vector>
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 namespace HelloTriangle
@@ -21,6 +27,24 @@ using GLFWWindowPointer = std::unique_ptr<GLFWwindow, decltype(glfwWindowDestroy
 
 constexpr inline auto INIT_WIDTH{800u};
 constexpr inline auto INIT_HEIGHT{800u};
+
+struct Vertex
+{
+	glm::vec2 position{};
+	glm::vec3 colour{};
+
+	static auto consteval getBindingDescription() -> vk::VertexInputBindingDescription { return {0, sizeof(Vertex)}; }
+
+	static auto consteval getAttributeDescriptions() -> std::array<vk::VertexInputAttributeDescription, 2>
+	{
+		auto constexpr positionAttribute{vk::VertexInputAttributeDescription{{}, {}, vk::Format::eR32G32Sfloat, offsetof(Vertex, position)}};
+		auto constexpr colourAttribute{vk::VertexInputAttributeDescription{1, {}, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, colour)}};
+		return {positionAttribute, colourAttribute};
+	}
+};
+
+auto const vertices{
+        std::vector<Vertex>{{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}}, {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}, {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}}}};
 
 class Application
 {
@@ -105,27 +129,35 @@ private:
 	std::vector<vkr::Semaphore>   renderFinishedSemaphores{makeSemaphores()};
 	std::vector<vkr::Fence>       inFlightFences{makeFences()};
 	std::uint32_t                 currentFrameIndex{0u};
+	vkr::Buffer                   vertexBuffer{makeVertexBufferMemory().first};
+	vkr::DeviceMemory             vertexBufferMemory{makeVertexBufferMemory().second};
 
 	//  INSTANCE PRIVATE
-	auto               mainLoop() -> void;
-	auto               drawFrame() -> void;
-	auto               makeInstance() -> vkr::Instance;
-	auto               makeDebugMessenger() -> vkr::DebugUtilsMessengerEXT;
-	auto               makeSurface() -> vkr::SurfaceKHR;
-	auto               pickPhysicalDevice() -> vkr::PhysicalDevice;
-	auto               makeDevice() -> vkr::Device;
-	auto               makeSwapchain() -> vkr::SwapchainKHR;
-	auto               makeImageViews() -> std::vector<vkr::ImageView>;
-	auto               makeShaderModule(std::span<std::byte const>) -> vkr::ShaderModule;
-	auto               makeRenderPass() -> vkr::RenderPass;
-	auto               makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::Pipeline>;
-	auto               makeFramebuffers() -> std::vector<vkr::Framebuffer>;
-	auto               makeCommandPool() -> vkr::CommandPool;
-	auto               recordCommandBuffer(vkr::CommandBuffer const&, std::uint32_t) -> void;
+	auto mainLoop() -> void;
+	auto drawFrame() -> void;
+	auto makeInstance() -> vkr::Instance;
+	auto makeDebugMessenger() -> vkr::DebugUtilsMessengerEXT;
+	auto makeSurface() -> vkr::SurfaceKHR;
+	auto pickPhysicalDevice() -> vkr::PhysicalDevice;
+	auto makeDevice() -> vkr::Device;
+	auto makeSwapchain() -> vkr::SwapchainKHR;
+	auto makeImageViews() -> std::vector<vkr::ImageView>;
+	auto makeShaderModule(std::span<std::byte const>) -> vkr::ShaderModule;
+	auto makeRenderPass() -> vkr::RenderPass;
+	auto makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::Pipeline>;
+	auto makeFramebuffers() -> std::vector<vkr::Framebuffer>;
+	auto makeCommandPool() -> vkr::CommandPool;
+	auto recordCommandBuffer(vkr::CommandBuffer const&, std::uint32_t) -> void;
+	auto makeSemaphores() -> std::vector<vkr::Semaphore>;
+	auto makeFences() -> std::vector<vkr::Fence>;
+	auto remakeSwapchain() -> void;
+	auto findMemoryType(std::uint32_t typeFilter, vk::MemoryPropertyFlags const&) -> std::uint32_t;
+	auto makeVertexBufferMemory() -> std::pair<vkr::Buffer, vkr::DeviceMemory>;
+	auto makeBufferAndMemory(vk::DeviceSize, vk::BufferUsageFlags const&, vk::MemoryPropertyFlags const&)
+	        -> std::pair<vkr::Buffer, vkr::DeviceMemory>;
+	auto copyBuffer(vkr::Buffer const&, vkr::Buffer&, vk::DeviceSize) -> void;
 	[[nodiscard]] auto makeCommandBuffers() const -> vkr::CommandBuffers;
-	auto               makeSemaphores() -> std::vector<vkr::Semaphore>;
-	auto               makeFences() -> std::vector<vkr::Fence>;
-	auto               remakeSwapchain() -> void;
+
 	auto makeWindowPointer(std::uint32_t width = 800, std::uint32_t height = 600, std::string_view windowName = "empty") -> GLFWWindowPointer;
 
 	//	STATIC PRIVATE

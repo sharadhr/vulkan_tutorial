@@ -2,7 +2,8 @@
 BasedOnStyle: LLVM
 AccessModifierOffset: -4
 AlignAfterOpenBracket: Align
-AlignConsecutiveAssignments: None
+AlignConsecutiveAssignments: Consecutive
+AlignConsecutiveDeclarations: AcrossEmptyLines
 AlignOperands: Align
 AllowAllArgumentsOnNextLine: false
 AllowAllParametersOfDeclarationOnNextLine: false

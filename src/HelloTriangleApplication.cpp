@@ -6,6 +6,11 @@
 #include <fmt/format.h>
 #include <fstream>
 #include <set>
+#include <utility>
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_raii.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 namespace HelloTriangle
 {
@@ -18,7 +23,7 @@ namespace
 {
 auto getGLFWInstanceExtensions() -> std::vector<char const*>
 {
-	static auto glfwExtensionCount{0u};
+	static auto       glfwExtensionCount{0u};
 	static auto const glfwExtensions{glfwGetRequiredInstanceExtensions(&glfwExtensionCount)};
 	static auto const extensions{std::vector(glfwExtensions, glfwExtensions + glfwExtensionCount)};
 
@@ -39,7 +44,7 @@ auto getRequiredExtensions(bool const enableValidationLayers) -> std::vector<cha
 auto checkValidationLayerSupport(vkr::Context const& context, std::span<char const*> requiredValLayers) -> bool
 {
 	static auto availableValLayers{context.enumerateInstanceLayerProperties()};
-	auto requiredValLayersCopy{std::vector<std::string_view>{std::begin(requiredValLayers), std::end(requiredValLayers)}};
+	auto        requiredValLayersCopy{std::vector<std::string_view>{std::begin(requiredValLayers), std::end(requiredValLayers)}};
 
 	if (availableValLayers.empty()) {
 		return false;
@@ -52,9 +57,9 @@ auto checkValidationLayerSupport(vkr::Context const& context, std::span<char con
 }
 
 VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc(vk::DebugUtilsMessageSeverityFlagBitsEXT const messageSeverity,
-                                                  vk::DebugUtilsMessageTypeFlagsEXT const messageType,
-                                                  vk::DebugUtilsMessengerCallbackDataEXT const* pCallbackData,
-                                                  [[maybe_unused]] void* pUserData)
+                                                  vk::DebugUtilsMessageTypeFlagsEXT const        messageType,
+                                                  vk::DebugUtilsMessengerCallbackDataEXT const*  pCallbackData,
+                                                  [[maybe_unused]] void*                         pUserData)
 {
 	static auto constexpr header = R"({severity} --- {type}:
 	Message ID Name   = <{id}>
@@ -66,10 +71,10 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc(vk::DebugUtilsMessageSeverityF
 	fmt::format_to(std::back_inserter(out),
 	               header,
 	               "severity"_a = to_string(messageSeverity),
-	               "type"_a = to_string(messageType),
-	               "id"_a = pCallbackData->pMessageIdName,
-	               "number"_a = pCallbackData->messageIdNumber,
-	               "message"_a = pCallbackData->pMessage);
+	               "type"_a     = to_string(messageType),
+	               "id"_a       = pCallbackData->pMessageIdName,
+	               "number"_a   = pCallbackData->messageIdNumber,
+	               "message"_a  = pCallbackData->pMessage);
 
 	if (pCallbackData->queueLabelCount > 0) {
 		static auto constexpr queueLabelsHeader{"\tQueue Labels:\n"sv};
@@ -106,7 +111,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc(vk::DebugUtilsMessageSeverityF
 			fmt::format_to(std::back_inserter(out), objectI, "i"_a = i);
 			fmt::format_to(std::back_inserter(out),
 			               objectDetails,
-			               "objectType"_a = vk::to_string(object.objectType),
+			               "objectType"_a   = vk::to_string(object.objectType),
 			               "objectHandle"_a = object.objectHandle,
 			               object.pObjectName ? "pObjectName"_a = std::string_view{object.pObjectName} : "pObjectName"_a = ""sv);
 		}
@@ -132,7 +137,7 @@ auto makeDebugMessengerCreateInfoEXT() -> vk::DebugUtilsMessengerCreateInfoEXT
 auto checkDeviceExtensionSupport(vkr::PhysicalDevice const& physDev, std::span<char const*> requiredExtensions) -> bool
 {
 	static auto availableDeviceExtensions{physDev.enumerateDeviceExtensionProperties()};
-	auto requiredExtensionsCopy{std::vector<std::string_view>{std::begin(requiredExtensions), std::end(requiredExtensions)}};
+	auto        requiredExtensionsCopy{std::vector<std::string_view>{std::begin(requiredExtensions), std::end(requiredExtensions)}};
 
 	if (availableDeviceExtensions.empty()) {
 		return false;
@@ -232,9 +237,9 @@ auto Application::pickPhysicalDevice() -> vkr::PhysicalDevice
 {
 	static auto const physicalDevices{vkr::PhysicalDevices(instance)};
 
-	auto const physDevice{std::ranges::find_if(
-	        physicalDevices,
-	        [this](auto&& physDev) { return isDeviceSuitable(std::forward<decltype(physDev)>(physDev), surface, requiredDeviceExtensions); })};
+	auto const        physDevice{std::ranges::find_if(
+            physicalDevices,
+            [this](auto&& physDev) { return isDeviceSuitable(std::forward<decltype(physDev)>(physDev), surface, requiredDeviceExtensions); })};
 	if (physDevice == std::end(physicalDevices)) {
 		throw std::runtime_error("failed to find a suitable GPU");
 	}
@@ -290,7 +295,7 @@ auto Application::chooseSwapExtent(GLFWWindowPointer const& window, vk::SurfaceC
 
 	static auto actualExtent{vk::Extent2D{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)}};
 
-	actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+	actualExtent.width  = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
 	actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 
 	return actualExtent;
@@ -307,25 +312,25 @@ auto Application::makeSwapchain() -> vkr::SwapchainKHR
 	auto const imageCount{std::max(swapchainSupport.capabilities.minImageCount + 1, swapchainSupport.capabilities.maxImageCount)};
 	auto const indices = queueFamilyIndices.indices();
 
-	auto swapchainCreateInfo{vk::SwapchainCreateInfoKHR{
-	        {},
-	        *surface,
-	        imageCount,
-	        format,
-	        colorSpace,
-	        extent,
-	        1,
-	        vk::ImageUsageFlagBits::eColorAttachment,
-	        queueFamilyIndices.graphicsFamily != queueFamilyIndices.presentFamily ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
-	        indices,
-	        swapchainSupport.capabilities.currentTransform,
-	        vk::CompositeAlphaFlagBitsKHR::eOpaque,
-	        presentMode,
-	        VK_TRUE}};
+	auto       swapchainCreateInfo{vk::SwapchainCreateInfoKHR{
+	              {},
+            *surface,
+            imageCount,
+            format,
+            colorSpace,
+            extent,
+            1,
+            vk::ImageUsageFlagBits::eColorAttachment,
+            queueFamilyIndices.graphicsFamily != queueFamilyIndices.presentFamily ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
+            indices,
+            swapchainSupport.capabilities.currentTransform,
+            vk::CompositeAlphaFlagBitsKHR::eOpaque,
+            presentMode,
+            VK_TRUE}};
 
 	if (format != swapchainImageFormat or extent != swapchainExtent) {
 		swapchainImageFormat = format;
-		swapchainExtent = extent;
+		swapchainExtent      = extent;
 	}
 
 	return {logicalDevice, swapchainCreateInfo};
@@ -357,7 +362,7 @@ auto Application::readFile(fs::path const& filePath) -> std::vector<std::byte>
 		throw std::runtime_error{"failed to open file"};
 	}
 	auto const fileSize{fs::file_size(filePath)};
-	auto buffer{std::vector<std::byte>(fileSize)};
+	auto       buffer{std::vector<std::byte>(fileSize)};
 	file.read(reinterpret_cast<char*>(buffer.data()), fileSize);
 
 	return buffer;
@@ -409,7 +414,10 @@ auto Application::makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::
 	auto constexpr dynamicStates{std::array{vk::DynamicState::eViewport, vk::DynamicState::eScissor}};
 	auto const dynamicState{vk::PipelineDynamicStateCreateInfo{{}, dynamicStates}};
 
-	auto constexpr vertexInputInfo{vk::PipelineVertexInputStateCreateInfo{}};
+	auto constexpr bindingDescription{Vertex::getBindingDescription()};
+	auto constexpr attributeDescription{Vertex::getAttributeDescriptions()};
+	auto const vertexInputInfo{vk::PipelineVertexInputStateCreateInfo{{}, bindingDescription, attributeDescription}};
+
 	auto constexpr inputAssembly{vk::PipelineInputAssemblyStateCreateInfo{{}, vk::PrimitiveTopology::eTriangleList, VK_FALSE}};
 	auto const viewport{vk::Viewport{0.0f, 0.0f, static_cast<float>(swapchainExtent.width), static_cast<float>(swapchainExtent.height), 0.0f, 1.0f}};
 
@@ -421,7 +429,7 @@ auto Application::makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::
 	                                                                   VK_FALSE,
 	                                                                   vk::PolygonMode::eFill,
 	                                                                   vk::CullModeFlagBits::eBack,
-	                                                                   vk::FrontFace::eClockwise,
+	                                                                   vk::FrontFace::eCounterClockwise,
 	                                                                   VK_FALSE,
 	                                                                   {},
 	                                                                   {},
@@ -443,7 +451,7 @@ auto Application::makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::
 	auto const colourBlending{vk::PipelineColorBlendStateCreateInfo{{}, VK_FALSE, vk::LogicOp::eCopy, 1u, &colourBlendAttachment}};
 
 	auto constexpr pipelineLayoutInfo{vk::PipelineLayoutCreateInfo{}};
-	auto pipelineLayoutRet{vkr::PipelineLayout{logicalDevice, pipelineLayoutInfo}};
+	auto       pipelineLayoutRet{vkr::PipelineLayout{logicalDevice, pipelineLayoutInfo}};
 
 	auto const pipelineInfo{vk::GraphicsPipelineCreateInfo({},
 	                                                       shaderStages,
@@ -507,13 +515,15 @@ auto Application::recordCommandBuffer(vkr::CommandBuffer const& commandBuffer, s
 
 	commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
+	auto constexpr offset{vk::DeviceSize{0}};
+	commandBuffer.bindVertexBuffers(0u, *vertexBuffer, offset);
 
 	auto const viewport{vk::Viewport{0.0f, 0.0f, static_cast<float>(swapchainExtent.width), static_cast<float>(swapchainExtent.height), 0.0f, 1.0f}};
 	commandBuffer.setViewport(0, viewport);
 
 	auto const scissor{vk::Rect2D{{}, swapchainExtent}};
 	commandBuffer.setScissor(0, scissor);
-	commandBuffer.draw(3, 1, 0, 0);
+	commandBuffer.draw(vertices.size(), 1, 0, 0);
 	commandBuffer.endRenderPass();
 	commandBuffer.end();
 }
@@ -582,7 +592,7 @@ auto Application::makeFences() -> std::vector<vkr::Fence>
 	return fences;
 }
 
-auto HelloTriangle::Application::remakeSwapchain() -> void
+auto Application::remakeSwapchain() -> void
 {
 	auto newWidth{0};
 	auto newHeight{0};
@@ -598,8 +608,8 @@ auto HelloTriangle::Application::remakeSwapchain() -> void
 	swapchainImageViews.clear();
 	swapchain.clear();
 
-	swapchain = makeSwapchain();
-	swapchainImageViews = makeImageViews();
+	swapchain             = makeSwapchain();
+	swapchainImageViews   = makeImageViews();
 	swapchainFramebuffers = makeFramebuffers();
 }
 
@@ -612,6 +622,62 @@ auto Application::makeWindowPointer(const std::uint32_t width, const std::uint32
 	glfwSetFramebufferSizeCallback(windowPtr.get(), frameBufferResizeCallback);
 
 	return windowPtr;
+}
+
+auto Application::makeBufferAndMemory(vk::DeviceSize size, vk::BufferUsageFlags const& usage, vk::MemoryPropertyFlags const& properties)
+        -> std::pair<vkr::Buffer, vkr::DeviceMemory>
+{
+	auto const bufferInfo{vk::BufferCreateInfo{{}, size, usage}};
+	auto       retBuffer{vkr::Buffer{logicalDevice, bufferInfo}};
+
+	auto const memoryRequirements{retBuffer.getMemoryRequirements()};
+	auto const allocInfo{vk::MemoryAllocateInfo{memoryRequirements.size, findMemoryType(memoryRequirements.memoryTypeBits, properties)}};
+	auto       retBufferMemory{vkr::DeviceMemory{logicalDevice, allocInfo}};
+	retBuffer.bindMemory(*retBufferMemory, 0);
+
+	return std::make_pair(std::move(retBuffer), std::move(retBufferMemory));
+}
+
+auto Application::findMemoryType(std::uint32_t typeFilter, vk::MemoryPropertyFlags const& flags) -> std::uint32_t
+{
+	auto const memProperties{physicalDevice.getMemoryProperties()};
+
+	for (auto i{0u}; i < memProperties.memoryTypeCount; ++i) {
+		if (typeFilter & (1 << i) and (memProperties.memoryTypes.at(i).propertyFlags & flags) == flags) {
+			return i;
+		}
+	}
+
+	throw std::runtime_error("failed to find suitable memory type");
+}
+
+auto Application::makeVertexBufferMemory() -> std::pair<vkr::Buffer, vkr::DeviceMemory>
+{
+	auto const bufferSize{sizeof(decltype(vertices)::value_type) * vertices.size()};
+	auto const [stagingBuffer,
+	            stagingBufferMemory]{makeBufferAndMemory(bufferSize,
+	                                                     vk::BufferUsageFlagBits::eTransferSrc,
+	                                                     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)};
+
+	auto const data{stagingBufferMemory.mapMemory(0, bufferSize)};
+	std::ranges::copy(vertices, static_cast<decltype(vertices)::value_type*>(data));
+	stagingBufferMemory.unmapMemory();
+
+	auto static [retBuffer, retBufferMemory]
+	{
+		makeBufferAndMemory(bufferSize,
+		                    vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+		                    vk::MemoryPropertyFlagBits::eDeviceLocal)
+	};
+	return std::make_pair(std::move(retBuffer), std::move(retBufferMemory));
+}
+
+auto Application::copyBuffer(vkr::Buffer const&, vkr::Buffer&, vk::DeviceSize)
+{
+	auto const allocInfo{vk::CommandBufferAllocateInfo{*commandPool, vk::CommandBufferLevel::ePrimary, 1u}};
+	auto       commandBuffer{logicalDevice.allocateCommandBuffers(allocInfo)};
+	auto const beginInfo{vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit}};
+	commandBuffers
 }
 
 auto Application::QueueFamilyIndices::findGraphicsQueueFamilyIndex(vkr::PhysicalDevice const& physDev) -> std::optional<std::uint32_t>
