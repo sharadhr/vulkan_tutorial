@@ -3,4 +3,4 @@ cmake-build-*
 build/*
 .vs/*
 Folder.DotSettings.user
-vulkan_tutorial.proj.DotSettings
+/vulkan_tutorial.proj.DotSettings
