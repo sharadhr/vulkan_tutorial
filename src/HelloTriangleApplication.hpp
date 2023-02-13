@@ -24,6 +24,7 @@ constexpr inline auto glfwWindowDestroyer{[](auto windowPtr)
 	                                          glfwTerminate();
                                           }};
 using GLFWWindowPointer = std::unique_ptr<GLFWwindow, decltype(glfwWindowDestroyer)>;
+using BufferAndMemory   = std::pair<vkr::Buffer, vkr::DeviceMemory>;
 
 constexpr inline auto INIT_WIDTH{800u};
 constexpr inline auto INIT_HEIGHT{800u};
@@ -43,8 +44,12 @@ struct Vertex
 	}
 };
 
-auto const vertices{
-        std::vector<Vertex>{{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}}, {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}, {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}}}};
+auto const vertices{std::vector<Vertex>{{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                        {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+                                        {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+                                        {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}}};
+
+auto const indices{std::vector<std::uint16_t>{0, 1, 2, 2, 3, 0}};
 
 class Application
 {
@@ -129,34 +134,34 @@ private:
 	std::vector<vkr::Semaphore>   renderFinishedSemaphores{makeSemaphores()};
 	std::vector<vkr::Fence>       inFlightFences{makeFences()};
 	std::uint32_t                 currentFrameIndex{0u};
-	vkr::Buffer                   vertexBuffer{makeVertexBufferMemory().first};
-	vkr::DeviceMemory             vertexBufferMemory{makeVertexBufferMemory().second};
+	BufferAndMemory               vertexBufferAndMemory{makeVertexBuffer()};
+	BufferAndMemory               indexBufferAndMemory{makeIndexBuffer()};
 
 	//  INSTANCE PRIVATE
-	auto mainLoop() -> void;
-	auto drawFrame() -> void;
-	auto makeInstance() -> vkr::Instance;
-	auto makeDebugMessenger() -> vkr::DebugUtilsMessengerEXT;
-	auto makeSurface() -> vkr::SurfaceKHR;
-	auto pickPhysicalDevice() -> vkr::PhysicalDevice;
-	auto makeDevice() -> vkr::Device;
-	auto makeSwapchain() -> vkr::SwapchainKHR;
-	auto makeImageViews() -> std::vector<vkr::ImageView>;
-	auto makeShaderModule(std::span<std::byte const>) -> vkr::ShaderModule;
-	auto makeRenderPass() -> vkr::RenderPass;
-	auto makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::Pipeline>;
-	auto makeFramebuffers() -> std::vector<vkr::Framebuffer>;
-	auto makeCommandPool() -> vkr::CommandPool;
-	auto recordCommandBuffer(vkr::CommandBuffer const&, std::uint32_t) -> void;
-	auto makeSemaphores() -> std::vector<vkr::Semaphore>;
-	auto makeFences() -> std::vector<vkr::Fence>;
-	auto remakeSwapchain() -> void;
-	auto findMemoryType(std::uint32_t typeFilter, vk::MemoryPropertyFlags const&) -> std::uint32_t;
-	auto makeVertexBufferMemory() -> std::pair<vkr::Buffer, vkr::DeviceMemory>;
-	auto makeBufferAndMemory(vk::DeviceSize, vk::BufferUsageFlags const&, vk::MemoryPropertyFlags const&)
-	        -> std::pair<vkr::Buffer, vkr::DeviceMemory>;
-	auto copyBuffer(vkr::Buffer const&, vkr::Buffer&, vk::DeviceSize) -> void;
+	auto               mainLoop() -> void;
+	auto               drawFrame() -> void;
+	auto               makeInstance() -> vkr::Instance;
+	auto               makeDebugMessenger() -> vkr::DebugUtilsMessengerEXT;
+	auto               makeSurface() -> vkr::SurfaceKHR;
+	auto               pickPhysicalDevice() -> vkr::PhysicalDevice;
+	auto               makeDevice() -> vkr::Device;
+	auto               makeSwapchain() -> vkr::SwapchainKHR;
+	auto               makeImageViews() -> std::vector<vkr::ImageView>;
+	auto               makeShaderModule(std::span<std::byte const>) -> vkr::ShaderModule;
+	auto               makeRenderPass() -> vkr::RenderPass;
+	auto               makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::Pipeline>;
+	auto               makeFramebuffers() -> std::vector<vkr::Framebuffer>;
+	auto               makeCommandPool() -> vkr::CommandPool;
 	[[nodiscard]] auto makeCommandBuffers() const -> vkr::CommandBuffers;
+	auto               recordCommandBuffer(vkr::CommandBuffer const&, std::uint32_t) -> void;
+	auto               makeSemaphores() -> std::vector<vkr::Semaphore>;
+	auto               makeFences() -> std::vector<vkr::Fence>;
+	auto               remakeSwapchain() -> void;
+	[[nodiscard]] auto findMemoryType(std::uint32_t typeFilter, vk::MemoryPropertyFlags const&) const -> std::uint32_t;
+	[[nodiscard]] auto makeBufferAndMemory(vk::DeviceSize, vk::BufferUsageFlags const&, vk::MemoryPropertyFlags const&) const -> BufferAndMemory;
+	auto               copyBuffer(vkr::Buffer const&, vkr::Buffer const&, vk::DeviceSize) const -> void;
+	[[nodiscard]] auto makeVertexBuffer() const -> BufferAndMemory;
+	[[nodiscard]] auto makeIndexBuffer() const -> BufferAndMemory;
 
 	auto makeWindowPointer(std::uint32_t width = 800, std::uint32_t height = 600, std::string_view windowName = "empty") -> GLFWWindowPointer;
 

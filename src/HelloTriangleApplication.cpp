@@ -311,7 +311,6 @@ auto Application::makeSwapchain() -> vkr::SwapchainKHR
 	auto const extent{chooseSwapExtent(window, swapchainSupport.capabilities)};
 	auto const imageCount{std::max(swapchainSupport.capabilities.minImageCount + 1, swapchainSupport.capabilities.maxImageCount)};
 	auto const indices = queueFamilyIndices.indices();
-
 	auto       swapchainCreateInfo{vk::SwapchainCreateInfoKHR{
 	              {},
             *surface,
@@ -429,7 +428,7 @@ auto Application::makeGraphicsPipeline() -> std::pair<vkr::PipelineLayout, vkr::
 	                                                                   VK_FALSE,
 	                                                                   vk::PolygonMode::eFill,
 	                                                                   vk::CullModeFlagBits::eBack,
-	                                                                   vk::FrontFace::eCounterClockwise,
+	                                                                   vk::FrontFace::eClockwise,
 	                                                                   VK_FALSE,
 	                                                                   {},
 	                                                                   {},
@@ -516,14 +515,15 @@ auto Application::recordCommandBuffer(vkr::CommandBuffer const& commandBuffer, s
 	commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
 	auto constexpr offset{vk::DeviceSize{0}};
-	commandBuffer.bindVertexBuffers(0u, *vertexBuffer, offset);
+	commandBuffer.bindVertexBuffers(0u, *vertexBufferAndMemory.first, offset);
+	commandBuffer.bindIndexBuffer(*indexBufferAndMemory.first, 0, vk::IndexType::eUint16);
 
 	auto const viewport{vk::Viewport{0.0f, 0.0f, static_cast<float>(swapchainExtent.width), static_cast<float>(swapchainExtent.height), 0.0f, 1.0f}};
 	commandBuffer.setViewport(0, viewport);
 
 	auto const scissor{vk::Rect2D{{}, swapchainExtent}};
 	commandBuffer.setScissor(0, scissor);
-	commandBuffer.draw(vertices.size(), 1, 0, 0);
+	commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 	commandBuffer.endRenderPass();
 	commandBuffer.end();
 }
@@ -547,9 +547,9 @@ auto Application::drawFrame() -> void
 	commandBuffers.at(currentFrameIndex).reset();
 	recordCommandBuffer(commandBuffers.at(currentFrameIndex), imageIndex);
 
-	auto const waitSemaphores{*imageAvailableSemaphores.at(currentFrameIndex)};
-	auto const signalSemaphores{*renderFinishedSemaphores.at(currentFrameIndex)};
-	auto const submitCommandBuffers{*commandBuffers.at(currentFrameIndex)};
+	auto const& waitSemaphores{*imageAvailableSemaphores.at(currentFrameIndex)};
+	auto const& signalSemaphores{*renderFinishedSemaphores.at(currentFrameIndex)};
+	auto const& submitCommandBuffers{*commandBuffers.at(currentFrameIndex)};
 	auto constexpr waitStages{vk::Flags{vk::PipelineStageFlagBits::eColorAttachmentOutput}};
 	auto const submitInfo{vk::SubmitInfo{waitSemaphores, waitStages, submitCommandBuffers, signalSemaphores}};
 
@@ -613,7 +613,7 @@ auto Application::remakeSwapchain() -> void
 	swapchainFramebuffers = makeFramebuffers();
 }
 
-auto Application::makeWindowPointer(const std::uint32_t width, const std::uint32_t height, std::string_view windowName) -> GLFWWindowPointer
+auto Application::makeWindowPointer(const std::uint32_t width, const std::uint32_t height, const std::string_view windowName) -> GLFWWindowPointer
 {
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -624,21 +624,7 @@ auto Application::makeWindowPointer(const std::uint32_t width, const std::uint32
 	return windowPtr;
 }
 
-auto Application::makeBufferAndMemory(vk::DeviceSize size, vk::BufferUsageFlags const& usage, vk::MemoryPropertyFlags const& properties)
-        -> std::pair<vkr::Buffer, vkr::DeviceMemory>
-{
-	auto const bufferInfo{vk::BufferCreateInfo{{}, size, usage}};
-	auto       retBuffer{vkr::Buffer{logicalDevice, bufferInfo}};
-
-	auto const memoryRequirements{retBuffer.getMemoryRequirements()};
-	auto const allocInfo{vk::MemoryAllocateInfo{memoryRequirements.size, findMemoryType(memoryRequirements.memoryTypeBits, properties)}};
-	auto       retBufferMemory{vkr::DeviceMemory{logicalDevice, allocInfo}};
-	retBuffer.bindMemory(*retBufferMemory, 0);
-
-	return std::make_pair(std::move(retBuffer), std::move(retBufferMemory));
-}
-
-auto Application::findMemoryType(std::uint32_t typeFilter, vk::MemoryPropertyFlags const& flags) -> std::uint32_t
+auto Application::findMemoryType(std::uint32_t const typeFilter, vk::MemoryPropertyFlags const& flags) const -> std::uint32_t
 {
 	auto const memProperties{physicalDevice.getMemoryProperties()};
 
@@ -651,7 +637,36 @@ auto Application::findMemoryType(std::uint32_t typeFilter, vk::MemoryPropertyFla
 	throw std::runtime_error("failed to find suitable memory type");
 }
 
-auto Application::makeVertexBufferMemory() -> std::pair<vkr::Buffer, vkr::DeviceMemory>
+auto Application::makeBufferAndMemory(vk::DeviceSize const size, vk::BufferUsageFlags const& usage, vk::MemoryPropertyFlags const& properties) const
+        -> BufferAndMemory
+{
+	auto const bufferInfo{vk::BufferCreateInfo{{}, size, usage}};
+	auto       retBuffer{vkr::Buffer{logicalDevice, bufferInfo}};
+
+	auto const memoryRequirements{retBuffer.getMemoryRequirements()};
+	auto const allocInfo{vk::MemoryAllocateInfo{memoryRequirements.size, findMemoryType(memoryRequirements.memoryTypeBits, properties)}};
+	auto       retBufferMemory{vkr::DeviceMemory{logicalDevice, allocInfo}};
+	retBuffer.bindMemory(*retBufferMemory, 0);
+
+	return std::make_pair(std::move(retBuffer), std::move(retBufferMemory));
+}
+
+auto Application::copyBuffer(vkr::Buffer const& srcBuffer, vkr::Buffer const& dstBuffer, vk::DeviceSize const size) const -> void
+{
+	auto const allocInfo{vk::CommandBufferAllocateInfo{*commandPool, vk::CommandBufferLevel::ePrimary, 1u}};
+	auto const commandBuffer{std::move(logicalDevice.allocateCommandBuffers(allocInfo).front())};
+	auto constexpr beginInfo{vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit}};
+	auto const copyRegion{vk::BufferCopy{{}, {}, size}};
+
+	commandBuffer.begin(beginInfo);
+	commandBuffer.copyBuffer(*srcBuffer, *dstBuffer, copyRegion);
+	commandBuffer.end();
+	auto const submitInfo{vk::SubmitInfo{{}, {}, *commandBuffer}};
+	graphicsQueue.submit(submitInfo, VK_NULL_HANDLE);
+	graphicsQueue.waitIdle();
+}
+
+auto Application::makeVertexBuffer() const -> std::pair<vkr::Buffer, vkr::DeviceMemory>
 {
 	auto const bufferSize{sizeof(decltype(vertices)::value_type) * vertices.size()};
 	auto const [stagingBuffer,
@@ -663,21 +678,32 @@ auto Application::makeVertexBufferMemory() -> std::pair<vkr::Buffer, vkr::Device
 	std::ranges::copy(vertices, static_cast<decltype(vertices)::value_type*>(data));
 	stagingBufferMemory.unmapMemory();
 
-	auto static [retBuffer, retBufferMemory]
-	{
-		makeBufferAndMemory(bufferSize,
-		                    vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-		                    vk::MemoryPropertyFlagBits::eDeviceLocal)
-	};
-	return std::make_pair(std::move(retBuffer), std::move(retBufferMemory));
+	auto [retVertBuffer, retVertBufferMemory]{makeBufferAndMemory(bufferSize,
+	                                                              vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+	                                                              vk::MemoryPropertyFlagBits::eDeviceLocal)};
+
+	copyBuffer(stagingBuffer, retVertBuffer, bufferSize);
+	return std::make_pair(std::move(retVertBuffer), std::move(retVertBufferMemory));
 }
 
-auto Application::copyBuffer(vkr::Buffer const&, vkr::Buffer&, vk::DeviceSize)
+auto Application::makeIndexBuffer() const -> BufferAndMemory
 {
-	auto const allocInfo{vk::CommandBufferAllocateInfo{*commandPool, vk::CommandBufferLevel::ePrimary, 1u}};
-	auto       commandBuffer{logicalDevice.allocateCommandBuffers(allocInfo)};
-	auto const beginInfo{vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit}};
-	commandBuffers
+	auto const bufferSize{sizeof(decltype(indices)::value_type) * indices.size()};
+	auto const [stagingBuffer,
+	            stagingBufferMemory]{makeBufferAndMemory(bufferSize,
+	                                                     vk::BufferUsageFlagBits::eTransferSrc,
+	                                                     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)};
+
+	auto const data{stagingBufferMemory.mapMemory(0, bufferSize)};
+	std::ranges::copy(indices, static_cast<decltype(indices)::value_type*>(data));
+	stagingBufferMemory.unmapMemory();
+
+	auto [retIndexBuffer, retIndexBufferMemory]{makeBufferAndMemory(bufferSize,
+	                                                                vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+	                                                                vk::MemoryPropertyFlagBits::eDeviceLocal)};
+
+	copyBuffer(stagingBuffer, retIndexBuffer, bufferSize);
+	return std::make_pair(std::move(retIndexBuffer), std::move(retIndexBufferMemory));
 }
 
 auto Application::QueueFamilyIndices::findGraphicsQueueFamilyIndex(vkr::PhysicalDevice const& physDev) -> std::optional<std::uint32_t>
