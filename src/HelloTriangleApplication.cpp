@@ -410,7 +410,7 @@ auto Application::makeRenderPass() const -> vkr::RenderPass
 
 auto Application::makeDescriptorSetLayout() const -> vkr::DescriptorSetLayout
 {
-	auto const mvprojLayoutBinding{vk::DescriptorSetLayoutBinding{{}, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex, {}}};
+	auto constexpr mvprojLayoutBinding{vk::DescriptorSetLayoutBinding{0u, vk::DescriptorType::eUniformBuffer, 1u, vk::ShaderStageFlagBits::eVertex}};
 	auto const layoutInfo{vk::DescriptorSetLayoutCreateInfo{{}, mvprojLayoutBinding}};
 
 	return logicalDevice.createDescriptorSetLayout(layoutInfo);
@@ -487,7 +487,7 @@ auto Application::makeGraphicsPipeline() const -> PipelineLayoutAndPipeline
 	                                                       {},
 	                                                       -1}};
 
-	auto retGraphicsPipeline{logicalDevice.createGraphicsPipeline(nullptr, pipelineInfo)};
+	auto       retGraphicsPipeline{logicalDevice.createGraphicsPipeline(nullptr, pipelineInfo)};
 
 	return {std::move(retPipelineLayout), std::move(retGraphicsPipeline)};
 }
@@ -542,11 +542,11 @@ auto Application::recordCommandBuffer(vkr::CommandBuffer const& commandBuffer, s
 	auto const scissor{vk::Rect2D{{}, swapchainExtent}};
 	commandBuffer.setScissor(0, scissor);
 
-	commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *layoutAndPipeline.first, {}, *descriptorSets[currentFrameIndex], 0u);
+	commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *layoutAndPipeline.first, {}, *descriptorSets[currentFrameIndex], {});
 
 	commandBuffer.drawIndexed(static_cast<uint32_t>(vertexIndices.size()), 1, 0, 0, 0);
 	commandBuffer.endRenderPass();
-	commandBuffer.end(); 
+	commandBuffer.end();
 }
 
 auto Application::drawFrame() -> void
@@ -573,7 +573,7 @@ auto Application::drawFrame() -> void
 	auto const& submitCommandBuffers{*commandBuffers.at(currentFrameIndex)};
 	auto constexpr waitStages{vk::Flags{vk::PipelineStageFlagBits::eColorAttachmentOutput}};
 
-	updateUniformBuffer(imageIndex);
+	updateUniformBuffer(currentFrameIndex);
 
 	auto const submitInfo{vk::SubmitInfo{waitSemaphores, waitStages, submitCommandBuffers, signalSemaphores}};
 
@@ -730,10 +730,10 @@ auto Application::makeUniformBuffers() const -> std::vector<BufferAndMemory>
 	return retBuffersAndMemories;
 }
 
-auto Application::mapUniformBuffers() -> std::vector<std::any>
+auto Application::mapUniformBuffers() -> std::vector<void*>
 {
 	constexpr auto bufferSize{sizeof(ModelViewProjectionObject)};
-	auto           retMaps{std::vector<std::any>{}};
+	auto           retMaps{std::vector<void*>{}};
 	retMaps.reserve(MAX_FRAMES_IN_FLIGHT);
 
 	std::ranges::transform(uniformBuffersAndMemories,
@@ -754,7 +754,7 @@ auto Application::updateUniformBuffer(std::uint32_t const currentImage) const ->
 	projection[1][1] *= -1;
 
 	auto const mvproj{ModelViewProjectionObject{model, view, projection}};
-	std::ranges::copy(std::span{&mvproj, 1}, std::any_cast<ModelViewProjectionObject*>(uniformBuffersMapped[currentImage]));
+	std::ranges::copy(std::span{&mvproj, 1}, static_cast<ModelViewProjectionObject*>(uniformBuffersMaps[currentImage]));
 }
 
 auto Application::makeDescriptorPool() const -> vkr::DescriptorPool

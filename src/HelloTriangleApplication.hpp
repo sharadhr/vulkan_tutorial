@@ -159,7 +159,7 @@ private:
 	BufferAndMemory              vertexBufferAndMemory{makeVertexBuffer()};
 	BufferAndMemory              indexBufferAndMemory{makeIndexBuffer()};
 	std::vector<BufferAndMemory> uniformBuffersAndMemories{makeUniformBuffers()};
-	std::vector<std::any>        uniformBuffersMapped{mapUniformBuffers()};
+	std::vector<void*>           uniformBuffersMaps{mapUniformBuffers()};
 
 	// descriptor pool
 	vkr::DescriptorPool             descriptorPool{makeDescriptorPool()};
@@ -201,7 +201,7 @@ private:
 	[[nodiscard]] auto makeVertexBuffer() const -> BufferAndMemory;
 	[[nodiscard]] auto makeIndexBuffer() const -> BufferAndMemory;
 	[[nodiscard]] auto makeUniformBuffers() const -> std::vector<BufferAndMemory>;
-	auto               mapUniformBuffers() -> std::vector<std::any>;
+	auto               mapUniformBuffers() -> std::vector<void*>;
 	auto               updateUniformBuffer(std::uint32_t) const -> void;
 	[[nodiscard]] auto makeDescriptorPool() const -> vkr::DescriptorPool;
 	auto               makeDescriptorSets() -> vkr::DescriptorSets;
