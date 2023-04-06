@@ -1,7 +1,6 @@
 #pragma once
 
 #include <GLFW/glfw3.h>
-#include <any>
 #include <cstdint>
 #include <filesystem>
 #include <glm/matrix.hpp>
@@ -29,7 +28,7 @@ using PipelineLayoutAndPipeline = std::pair<vkr::PipelineLayout, vkr::Pipeline>;
 using BufferAndMemory           = std::pair<vkr::Buffer, vkr::DeviceMemory>;
 
 auto makeWindowPointer(Application& app, std::uint32_t width = 800, std::uint32_t height = 600, std::string_view windowName = "empty")
-        -> GLFWWindowPointer;
+    -> GLFWWindowPointer;
 
 struct Vertex
 {
@@ -40,13 +39,16 @@ struct Vertex
 
 	static auto consteval getAttributeDescriptions() -> std::array<vk::VertexInputAttributeDescription, 2>
 	{
-		auto constexpr positionAttribute{vk::VertexInputAttributeDescription{{}, {}, vk::Format::eR32G32Sfloat, offsetof(Vertex, position)}};
-		auto constexpr colourAttribute{vk::VertexInputAttributeDescription{1, {}, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, colour)}};
+		auto constexpr positionAttribute =
+		    vk::VertexInputAttributeDescription{{}, {}, vk::Format::eR32G32Sfloat, static_cast<unsigned>(offsetof(Vertex, position))};
+		auto constexpr colourAttribute =
+		    vk::VertexInputAttributeDescription{1, {}, vk::Format::eR32G32B32Sfloat, static_cast<unsigned>(offsetof(Vertex, colour))};
+
 		return {positionAttribute, colourAttribute};
 	}
 };
 
-struct ModelViewProjectionObject
+struct ModelViewProjection
 {
 	glm::mat4 model{};
 	glm::mat4 view{};
@@ -103,7 +105,7 @@ public:
 	};
 
 private:
-	//	MEMBERS
+	// MEMBERS
 	// miscellaneous stuff
 #ifdef NDEBUG
 	bool const enableValidationLayers{false};
@@ -208,7 +210,7 @@ private:
 
 	//	STATIC PRIVATE
 	static auto chooseSwapSurfaceFormat(std::span<vk::SurfaceFormatKHR const>) -> vk::SurfaceFormatKHR;
-	static auto chooseSwapExtent(GLFWWindowPointer const& window, vk::SurfaceCapabilitiesKHR const& capabilities) -> vk::Extent2D;
+	static auto chooseSwapExtent(GLFWWindowPointer const&, vk::SurfaceCapabilitiesKHR const&) -> vk::Extent2D;
 	static auto readFile(std::filesystem::path const&) -> std::vector<std::byte>;
 };
 }// namespace HelloTriangle

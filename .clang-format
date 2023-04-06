@@ -4,7 +4,7 @@ AccessModifierOffset: -4
 AlignAfterOpenBracket: Align
 AlignConsecutiveAssignments: Consecutive
 AlignConsecutiveDeclarations: AcrossEmptyLines
-AlignOperands: Align
+AlignOperands: AlignAfterOperator
 AllowAllArgumentsOnNextLine: false
 AllowAllParametersOfDeclarationOnNextLine: false
 AllowShortBlocksOnASingleLine: Always
@@ -37,7 +37,7 @@ BreakConstructorInitializers: BeforeColon
 BreakInheritanceList: BeforeColon
 ColumnLimit: 150
 CompactNamespaces: false
-ContinuationIndentWidth: 8
+ContinuationIndentWidth: 4
 IndentCaseLabels: true
 IndentPPDirectives: None
 IndentWidth: 4
@@ -46,7 +46,6 @@ MaxEmptyLinesToKeep: 1
 NamespaceIndentation: None
 ObjCSpaceAfterProperty: false
 ObjCSpaceBeforeProtocolList: true
-PointerAlignment: Left
 ReflowComments: true
 SpaceAfterCStyleCast: true
 SpaceAfterLogicalNot: false
@@ -69,6 +68,7 @@ UseTab: ForIndentation
 SeparateDefinitionBlocks: Always
 QualifierAlignment: Right
 ReferenceAlignment: Left
+PointerAlignment: Left
 LambdaBodyIndentation: Signature
 PackConstructorInitializers: CurrentLine
 BinPackParameters: false
