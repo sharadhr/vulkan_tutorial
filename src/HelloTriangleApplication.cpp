@@ -683,14 +683,16 @@ auto Application::copyBuffer(vkr::Buffer const& srcBuffer, vkr::Buffer const& ds
 
 auto Application::makeVertexBuffer() const -> BufferAndMemory
 {
-	auto const bufferSize = sizeof(decltype(vertices)::value_type) * vertices.size();
+	using vertexType = decltype(vertices)::value_type;
+
+	auto const bufferSize = sizeof(vertexType) * vertices.size();
 	auto const [stagingBuffer, stagingBufferMemory] =
 	    makeBufferAndMemory(bufferSize,
 	                        vk::BufferUsageFlagBits::eTransferSrc,
 	                        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-	auto const data = stagingBufferMemory.mapMemory(0, bufferSize);
-	std::ranges::copy(vertices, static_cast<decltype(vertices)::value_type*>(data));
+	auto const data = static_cast<std::add_pointer_t<vertexType>>(stagingBufferMemory.mapMemory(0, bufferSize));
+	std::ranges::uninitialized_copy(vertices, std::span{data, vertices.size()});
 	stagingBufferMemory.unmapMemory();
 
 	auto [retVertBuffer, retVertBufferMemory] = makeBufferAndMemory(bufferSize,
@@ -703,14 +705,16 @@ auto Application::makeVertexBuffer() const -> BufferAndMemory
 
 auto Application::makeIndexBuffer() const -> BufferAndMemory
 {
-	auto const bufferSize{sizeof(decltype(vertexIndices)::value_type) * vertexIndices.size()};
+	using vertexIndexType = decltype(vertexIndices)::value_type;
+	
+	auto const bufferSize{sizeof(vertexIndexType) * vertexIndices.size()};
 	auto const [stagingBuffer, stagingBufferMemory] =
 	    makeBufferAndMemory(bufferSize,
 	                        vk::BufferUsageFlagBits::eTransferSrc,
 	                        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-	auto const data = stagingBufferMemory.mapMemory(0, bufferSize);
-	std::ranges::copy(vertexIndices, static_cast<decltype(vertexIndices)::value_type*>(data));
+	auto const data = static_cast<std::add_pointer_t<vertexIndexType>>(stagingBufferMemory.mapMemory(0, bufferSize));
+	std::ranges::uninitialized_copy(vertexIndices, std::span{data, vertexIndices.size()});
 	stagingBufferMemory.unmapMemory();
 
 	auto [retIndexBuffer, retIndexBufferMemory] = makeBufferAndMemory(bufferSize,
@@ -758,8 +762,8 @@ auto Application::updateUniformBuffer(std::uint32_t const currentImage) const ->
 	auto const  currentTime = std::chrono::high_resolution_clock::now();
 	auto const  deltaTime   = std::chrono::duration<float, std::chrono::seconds::period>{currentTime - startTime};
 
-	auto const  model = rotate(glm::mat4(1.0f), deltaTime.count() * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-	auto const  view  = lookAt(glm::vec3{2.0f, 2.0f, 2.0f}, glm::vec3{}, glm::vec3{0.0f, 1.0f, 0.0f});
+	auto const  model = rotate(glm::mat4{1.0f}, deltaTime.count() * glm::radians(90.0f), glm::vec3{0.0f, 0.0f, 1.0f});
+	auto const  view  = lookAt(glm::vec3{2.0f}, {}, glm::vec3{0.0f, 0.0f, 1.0f});
 	auto        projection =
 	    glm::perspective(glm::radians(45.0f), static_cast<float>(swapchainExtent.width) / static_cast<float>(swapchainExtent.height), 0.1f, 10.0f);
 	projection[1][1] *= -1;
