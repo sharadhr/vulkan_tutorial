@@ -66,10 +66,12 @@ SpacesInSquareBrackets: false
 TabWidth: 4
 UseTab: ForIndentation
 SeparateDefinitionBlocks: Always
-QualifierAlignment: Right
+QualifierAlignment: Custom
+QualifierOrder: [ 'inline', 'constexpr', 'static', 'volatile', 'restrict', 'friend', 'type', 'const']
 ReferenceAlignment: Left
 PointerAlignment: Left
 LambdaBodyIndentation: Signature
 PackConstructorInitializers: CurrentLine
 BinPackParameters: false
 BinPackArguments: false
+InsertNewlineAtEOF: true

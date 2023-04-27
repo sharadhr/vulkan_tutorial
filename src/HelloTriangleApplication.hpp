@@ -18,7 +18,7 @@ namespace HelloTriangle
 class Application;
 namespace vkr = vk::raii;
 
-constexpr inline auto glfwWindowDestroyer{[](auto windowPtr)
+inline constexpr auto glfwWindowDestroyer{[](auto windowPtr)
                                           {
 	                                          glfwDestroyWindow(windowPtr);
 	                                          glfwTerminate();
@@ -26,6 +26,7 @@ constexpr inline auto glfwWindowDestroyer{[](auto windowPtr)
 using GLFWWindowPointer         = std::unique_ptr<GLFWwindow, decltype(glfwWindowDestroyer)>;
 using PipelineLayoutAndPipeline = std::pair<vkr::PipelineLayout, vkr::Pipeline>;
 using BufferAndMemory           = std::pair<vkr::Buffer, vkr::DeviceMemory>;
+using ImageAndMemory            = std::pair<vkr::Image, vkr::DeviceMemory>;
 
 auto makeWindowPointer(Application& app, std::uint32_t width = 800, std::uint32_t height = 600, std::string_view windowName = "empty")
     -> GLFWWindowPointer;
@@ -39,9 +40,9 @@ struct Vertex
 
 	static auto consteval getAttributeDescriptions() -> std::array<vk::VertexInputAttributeDescription, 2>
 	{
-		auto constexpr positionAttribute =
+		constexpr auto positionAttribute =
 		    vk::VertexInputAttributeDescription{{}, {}, vk::Format::eR32G32Sfloat, static_cast<unsigned>(offsetof(Vertex, position))};
-		auto constexpr colourAttribute =
+		constexpr auto colourAttribute =
 		    vk::VertexInputAttributeDescription{1, {}, vk::Format::eR32G32B32Sfloat, static_cast<unsigned>(offsetof(Vertex, colour))};
 
 		return {positionAttribute, colourAttribute};
@@ -57,8 +58,8 @@ struct ModelViewProjection
 
 inline std::array     validationLayers{"VK_LAYER_KHRONOS_validation"};
 inline std::array     requiredDeviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-constexpr inline auto INIT_WIDTH{800u};
-constexpr inline auto INIT_HEIGHT{800u};
+inline constexpr auto INIT_WIDTH{800u};
+inline constexpr auto INIT_HEIGHT{800u};
 auto const            vertices{std::vector<Vertex>{{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
                                                    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
                                                    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
@@ -121,7 +122,7 @@ private:
 	std::uint32_t engineVersion{VK_MAKE_API_VERSION(0, 1, 0, 0)};
 
 	// window
-	GLFWWindowPointer window{makeWindowPointer(*this, INIT_WIDTH, INIT_HEIGHT, windowName.data())};
+	GLFWWindowPointer window{makeWindowPointer(*this, INIT_WIDTH, INIT_HEIGHT, windowName)};
 
 	// context, instance, surface
 	vkr::Context  context{};
@@ -160,6 +161,7 @@ private:
 	// buffers and bound memories
 	BufferAndMemory              vertexBufferAndMemory{makeVertexBuffer()};
 	BufferAndMemory              indexBufferAndMemory{makeIndexBuffer()};
+	ImageAndMemory               textureImageAndMemory{makeTextureImage(R"(..\..\src\textures\statue.jpg)")};
 	std::vector<BufferAndMemory> uniformBuffersAndMemories{makeUniformBuffers()};
 	std::vector<void*>           uniformBuffersMaps{mapUniformBuffers()};
 
@@ -197,7 +199,7 @@ private:
 	[[nodiscard]] auto makeSemaphores() const -> std::vector<vkr::Semaphore>;
 	[[nodiscard]] auto makeFences() const -> std::vector<vkr::Fence>;
 	auto               remakeSwapchain() -> void;
-	[[nodiscard]] auto findMemoryType(std::uint32_t typeFilter, vk::MemoryPropertyFlags const&) const -> std::uint32_t;
+	[[nodiscard]] auto findMemoryType(std::uint32_t, vk::MemoryPropertyFlags const&) const -> std::uint32_t;
 	[[nodiscard]] auto makeBufferAndMemory(vk::DeviceSize, vk::BufferUsageFlags const&, vk::MemoryPropertyFlags const&) const -> BufferAndMemory;
 	auto               copyBuffer(vkr::Buffer const&, vkr::Buffer const&, vk::DeviceSize) const -> void;
 	[[nodiscard]] auto makeVertexBuffer() const -> BufferAndMemory;
@@ -207,6 +209,13 @@ private:
 	auto               updateUniformBuffer(std::uint32_t) const -> void;
 	[[nodiscard]] auto makeDescriptorPool() const -> vkr::DescriptorPool;
 	auto               makeDescriptorSets() -> vkr::DescriptorSets;
+	[[nodiscard]] auto makeTextureImage(std::filesystem::path const&) const -> ImageAndMemory;
+	auto               makeImageAndMemory(std::uint32_t,
+	                                      std::uint32_t,
+	                                      vk::Format const&,
+	                                      vk::ImageTiling const&,
+	                                      vk::ImageUsageFlags const&,
+	                                      vk ::MemoryPropertyFlags const&) const -> ImageAndMemory;
 
 	//	STATIC PRIVATE
 	static auto chooseSwapSurfaceFormat(std::span<vk::SurfaceFormatKHR const>) -> vk::SurfaceFormatKHR;

@@ -17,7 +17,9 @@ target_sources(vulkan_tutorial PRIVATE src/HelloTriangleApplication.cpp src/main
 target_glsl_shaders(vulkan_tutorial PRIVATE src/shaders/triangle.vert src/shaders/triangle.frag)
 
 target_compile_features(vulkan_tutorial PRIVATE cxx_std_20)
-set_target_properties(vulkan_tutorial PROPERTIES CXX_EXTENSIONS OFF)
+set_target_properties(vulkan_tutorial 
+        PROPERTIES CXX_EXTENSIONS OFF
+        VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 target_link_libraries(vulkan_tutorial PRIVATE glfw glm::glm fmt::fmt Threads::Threads Vulkan::Vulkan)
 target_compile_definitions(vulkan_tutorial PRIVATE
         VULKAN_HPP_NO_SMART_HANDLE
@@ -31,7 +33,7 @@ target_compile_options(vulkan_tutorial PRIVATE
         # windows and msvc/clang
         $<$<PLATFORM_ID:Windows>:/W4 /permissive- $<$<CXX_COMPILER_ID:Clang>:-Wno-braced-scalar-init -ferror-limit=0>>
         # not-windows and clang or gcc
-        $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<OR:$<CXX_COMPILER_ID:Clang,GNU>>>:-Wall -Wextra -pedantic -fsanitize=address,thread,undefined -fdiagnostics-color=always -Wno-braced-scalar-init>)
+        $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<OR:$<CXX_COMPILER_ID:Clang,GNU>>>:-Wall -Wextra -pedantic -fsanitize=address,undefined -fdiagnostics-color=always -Wno-braced-scalar-init>)
 target_link_options(vulkan_tutorial PRIVATE
         # not-windows and clang or gcc
         $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<OR:$<CXX_COMPILER_ID:Clang,GNU>>>:-fsanitize=address -fsanitize=undefined>)

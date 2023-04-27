@@ -1,4 +1,5 @@
 #define GLM_FORCE_RADIANS
+#define STB_IMAGE_IMPLEMENTATION
 
 #include "HelloTriangleApplication.hpp"
 
@@ -10,13 +11,13 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <numeric>
 #include <set>
+#include <stb_image.h>
 #include <utility>
 #include <vulkan/vulkan_raii.hpp>
 
 namespace HelloTriangle
 {
 namespace fs = std::filesystem;
-
 using namespace std::string_view_literals;
 using namespace fmt::literals;
 
@@ -62,7 +63,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc(vk::DebugUtilsMessageSeverityF
                                                   vk::DebugUtilsMessengerCallbackDataEXT const*  pCallbackData,
                                                   [[maybe_unused]] void*                         pUserData)
 {
-	static constexpr auto header = R"({severity} --- {type}:
+	constexpr static auto header = R"({severity} --- {type}:
 	Message ID Name   = <{id}>
 	Message ID Number = {number}
 	message           = <{message}>
@@ -78,8 +79,8 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc(vk::DebugUtilsMessageSeverityF
 	               "message"_a  = pCallbackData->pMessage);
 
 	if (pCallbackData->queueLabelCount > 0) {
-		static constexpr auto queueLabelsHeader = "\tQueue Labels:\n"sv;
-		static constexpr auto queueLabel        = "\t\tlabelName = <{labelName}>\n"sv;
+		constexpr static auto queueLabelsHeader = "\tQueue Labels:\n"sv;
+		constexpr static auto queueLabel        = "\t\tlabelName = <{labelName}>\n"sv;
 		auto const            labels            = std::span{pCallbackData->pQueueLabels, pCallbackData->queueLabelCount};
 
 		fmt::format_to(std::back_inserter(out), queueLabelsHeader);
@@ -88,8 +89,8 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc(vk::DebugUtilsMessageSeverityF
 	}
 
 	if (pCallbackData->cmdBufLabelCount > 0) {
-		static constexpr auto commandBufferLabelsHeader{"\tCommand Buffer Labels:\n"sv};
-		static constexpr auto commandBufferLabel{"\t\tlabelName = <{labelName}>\n"sv};
+		constexpr static auto commandBufferLabelsHeader{"\tCommand Buffer Labels:\n"sv};
+		constexpr static auto commandBufferLabel{"\t\tlabelName = <{labelName}>\n"sv};
 		auto const            labels = std::span{pCallbackData->pCmdBufLabels, pCallbackData->cmdBufLabelCount};
 
 		fmt::format_to(std::back_inserter(out), commandBufferLabelsHeader);
@@ -99,9 +100,9 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc(vk::DebugUtilsMessageSeverityF
 	}
 
 	if (pCallbackData->objectCount > 0) {
-		static constexpr auto objectsHeader = "\tObjects:\n"sv;
-		static constexpr auto objectI       = "\t\tObject {i}\n"sv;
-		static constexpr auto objectDetails = "\t\t\tObject Type   = {objectType}\n"
+		constexpr static auto objectsHeader = "\tObjects:\n"sv;
+		constexpr static auto objectI       = "\t\tObject {i}\n"sv;
+		constexpr static auto objectDetails = "\t\t\tObject Type   = {objectType}\n"
 		                                      "\t\t\tObject Handle = {objectHandle}\n"
 		                                      "\t\t\tObject Name   = <{pObjectName}>\n"sv;
 		auto const            objects       = std::span{pCallbackData->pObjects, pCallbackData->objectCount};
@@ -125,8 +126,8 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc(vk::DebugUtilsMessageSeverityF
 
 auto makeDebugMessengerCreateInfoEXT() -> vk::DebugUtilsMessengerCreateInfoEXT
 {
-	static constexpr auto severityFlags = vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
-	static constexpr auto typeFlags     = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+	constexpr static auto severityFlags = vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
+	constexpr static auto typeFlags     = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
 	                                  vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
 	auto const debugCreateInfo =
 	    vk::DebugUtilsMessengerCreateInfoEXT{{}, severityFlags, typeFlags, reinterpret_cast<PFN_vkDebugUtilsMessengerCallbackEXT>(&debugMessageFunc)};
@@ -180,7 +181,8 @@ auto frameBufferResizeCallback = [](GLFWwindow* window, [[maybe_unused]] int wid
 };
 }// namespace
 
-auto makeWindowPointer(Application& app, std::uint32_t const width, std::uint32_t const height, std::string_view windowName) -> GLFWWindowPointer
+auto makeWindowPointer(Application& app, std::uint32_t const width, std::uint32_t const height, std::string_view const windowName)
+    -> GLFWWindowPointer
 {
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -373,7 +375,7 @@ auto Application::readFile(fs::path const& filePath) -> std::vector<std::byte>
 {
 	auto file = std::ifstream{filePath, std::ios::in | std::ios::binary};
 	if (!file.is_open()) {
-		throw std::runtime_error{"failed to open file"};
+		throw std::runtime_error{std::format("failed to open file: {}", filePath.string())};
 	}
 
 	auto const fileSize = file_size(filePath);
@@ -383,7 +385,7 @@ auto Application::readFile(fs::path const& filePath) -> std::vector<std::byte>
 	return buffer;
 }
 
-auto Application::makeShaderModule(std::span<std::byte const> shaderCode) const -> vkr::ShaderModule
+auto Application::makeShaderModule(std::span<std::byte const> const shaderCode) const -> vkr::ShaderModule
 {
 	auto const shaderModuleCreateInfo = vk::ShaderModuleCreateInfo{{}, shaderCode.size(), reinterpret_cast<uint32_t const*>(shaderCode.data())};
 
@@ -706,7 +708,7 @@ auto Application::makeVertexBuffer() const -> BufferAndMemory
 auto Application::makeIndexBuffer() const -> BufferAndMemory
 {
 	using vertexIndexType = decltype(vertexIndices)::value_type;
-	
+
 	auto const bufferSize{sizeof(vertexIndexType) * vertexIndices.size()};
 	auto const [stagingBuffer, stagingBufferMemory] =
 	    makeBufferAndMemory(bufferSize,
@@ -793,6 +795,65 @@ auto Application::makeDescriptorSets() -> vkr::DescriptorSets
 	}
 
 	return retDescriptorSets;
+}
+
+auto Application::makeImageAndMemory(std::uint32_t const            width,
+                                     std::uint32_t const            height,
+                                     vk::Format const&              format,
+                                     vk::ImageTiling const&         tiling,
+                                     vk::ImageUsageFlags const&     usage,
+                                     vk::MemoryPropertyFlags const& properties) const -> ImageAndMemory
+{
+	auto const imageInfo = vk::ImageCreateInfo{{},
+	                                           vk::ImageType::e2D,
+	                                           format,
+	                                           vk::Extent3D{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1u},
+	                                           1u,
+	                                           1u,
+	                                           vk::SampleCountFlagBits::e1,
+	                                           tiling,
+	                                           usage,
+	                                           vk::SharingMode::eExclusive,
+	                                           {},
+	                                           vk::ImageLayout::eUndefined};
+
+	auto       image           = logicalDevice.createImage(imageInfo);
+	auto const memRequirements = image.getMemoryRequirements();
+	auto const allocInfo       = vk::MemoryAllocateInfo{memRequirements.size, findMemoryType(memRequirements.memoryTypeBits, properties)};
+	auto       imageMemory     = logicalDevice.allocateMemory(allocInfo);
+	image.bindMemory(*imageMemory, 0u);
+
+	return std::make_pair(std::move(image), std::move(imageMemory));
+}
+
+auto Application::makeTextureImage(fs::path const& texturePath) const -> ImageAndMemory
+{
+	int        texWidth, texHeight, texChannels;
+	auto const pixels    = stbi_load(texturePath.string().data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	auto const imageSize = static_cast<vk::DeviceSize>(texWidth) * texHeight * texChannels;
+	auto const pixelSpan = std::span{pixels, imageSize};
+
+	if (pixels == nullptr) {
+		throw std::runtime_error{std::format("Failed to load texture image: {}", texturePath.string())};
+	}
+
+	auto [stagingBuffer, stagingBufferMemory] =
+	    makeBufferAndMemory(imageSize,
+	                        vk::BufferUsageFlagBits::eTransferSrc,
+	                        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+	auto const data = static_cast<stbi_uc*>(stagingBufferMemory.mapMemory(0, imageSize));
+	std::ranges::uninitialized_copy(pixelSpan, std::span{data, imageSize});
+
+	stagingBufferMemory.unmapMemory();
+	stbi_image_free(pixels);
+
+	return makeImageAndMemory(texWidth,
+	                          texHeight,
+	                          vk::Format::eR8G8B8A8Srgb,
+	                          vk::ImageTiling::eOptimal,
+	                          vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+	                          vk::MemoryPropertyFlagBits::eDeviceLocal);
 }
 
 Application::QueueFamilyIndices::QueueFamilyIndices(vkr::PhysicalDevice const& physDev, vkr::SurfaceKHR const& surface)
