@@ -182,6 +182,8 @@ auto frameBufferResizeCallback = [](GLFWwindow* window, [[maybe_unused]] int wid
 	auto const app          = static_cast<Application*>(glfwGetWindowUserPointer(window));
 	app->framebufferResized = true;
 };
+
+auto hasStencilComponent(vk::Format const& format) -> bool { return format == vk::Format::eD32SfloatS8Uint or format == vk::Format::eD24UnormS8Uint; }
 }// namespace
 
 auto makeWindowPointer(Application& app, std::uint32_t const width, std::uint32_t const height, std::string_view const windowName)
@@ -364,15 +366,15 @@ auto Application::makeImageViews() -> std::vector<vkr::ImageView>
 	imageViews.reserve(swapchain.getImages().size());
 	std::ranges::transform(swapchain.getImages(),
 	                       std::back_inserter(imageViews),
-	                       [this](auto const& image) -> vkr::ImageView { return makeImageView(image, swapchainImageFormat); });
+	                       [this](auto const& image) -> vkr::ImageView
+	                       { return makeImageView(image, swapchainImageFormat, vk::ImageAspectFlagBits::eColor); });
 
 	return imageViews;
 }
 
-auto Application::makeImageView(vk::Image const& image, vk::Format const& format) const -> vkr::ImageView
+auto Application::makeImageView(vk::Image const& image, vk::Format const& format, vk::ImageAspectFlags const& aspectFlags) const -> vkr::ImageView
 {
-	auto const imageCreateInfo =
-	    vk::ImageViewCreateInfo{{}, image, vk::ImageViewType::e2D, format, {}, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
+	auto const imageCreateInfo = vk::ImageViewCreateInfo{{}, image, vk::ImageViewType::e2D, format, {}, {aspectFlags, 0, 1, 0, 1}};
 
 	return logicalDevice.createImageView(imageCreateInfo);
 }
@@ -410,14 +412,29 @@ auto Application::makeRenderPass() const -> vkr::RenderPass
                                                             vk::ImageLayout::eUndefined,
                                                             vk::ImageLayout::ePresentSrcKHR};
 	constexpr auto colourAttachmentRef = vk::AttachmentReference{{0}, vk::ImageLayout::eColorAttachmentOptimal};
-	auto const     subpass             = vk::SubpassDescription{{}, vk::PipelineBindPoint::eGraphics, {}, colourAttachmentRef};
-	constexpr auto dependency          = vk::SubpassDependency{VK_SUBPASS_EXTERNAL,
-	                                                           {},
-                                                      vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                                                      vk::PipelineStageFlagBits::eColorAttachmentOutput,
-	                                                           {},
-                                                      vk::AccessFlagBits::eColorAttachmentWrite};
-	auto const     renderPassInfo      = vk::RenderPassCreateInfo{{}, colourAttachment, subpass, dependency};
+
+	auto const     depthAttachment    = vk::AttachmentDescription{{},
+                                                           findDepthFormat(),
+                                                           vk::SampleCountFlagBits::e1,
+                                                           vk::AttachmentLoadOp::eClear,
+                                                           vk::AttachmentStoreOp::eDontCare,
+                                                           vk::AttachmentLoadOp::eDontCare,
+                                                           vk::AttachmentStoreOp::eDontCare,
+                                                           vk::ImageLayout::eUndefined,
+                                                           vk::ImageLayout::eDepthStencilAttachmentOptimal};
+	constexpr auto depthAttachmentRef = vk::AttachmentReference{1u, vk::ImageLayout::eDepthStencilAttachmentOptimal};
+
+	auto const     subpass = vk::SubpassDescription{{}, vk::PipelineBindPoint::eGraphics, {}, colourAttachmentRef, {}, &depthAttachmentRef};
+	constexpr auto dependency =
+	    vk::SubpassDependency{VK_SUBPASS_EXTERNAL,
+	                          {},
+	                          vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+	                          vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+	                          {},
+	                          vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite};
+
+	auto const attachments    = std::array{colourAttachment, depthAttachment};
+	auto const renderPassInfo = vk::RenderPassCreateInfo{{}, attachments, subpass, dependency};
 
 	return logicalDevice.createRenderPass(renderPassInfo);
 }
@@ -457,7 +474,8 @@ auto Application::makeGraphicsPipeline() const -> PipelineLayoutAndPipeline
 
 	auto const scissor       = vk::Rect2D{{0, 0}, swapchainExtent};
 	auto const viewportState = vk::PipelineViewportStateCreateInfo{{}, 1u, &viewport, 1u, &scissor};
-
+	constexpr auto depthStencil =
+	    vk::PipelineDepthStencilStateCreateInfo{{}, VK_TRUE, VK_TRUE, vk::CompareOp::eLess, VK_FALSE, VK_FALSE, {}, {}, {}, 1.0f};
 	constexpr auto rasteriser            = vk::PipelineRasterizationStateCreateInfo{{},
                                                                          VK_FALSE,
                                                                          VK_FALSE,
@@ -490,7 +508,7 @@ auto Application::makeGraphicsPipeline() const -> PipelineLayoutAndPipeline
                                                              &viewportState,
                                                              &rasteriser,
                                                              &multisampling,
-	                                                                      {},
+                                                             &depthStencil,
                                                              &colourBlending,
                                                              &dynamicState,
                                                              *retPipelineLayout,
@@ -512,11 +530,14 @@ auto Application::makeFramebuffers() -> std::vector<vkr::Framebuffer>
 	std::ranges::transform(
 	    swapchainImageViews,
 	    std::back_inserter(framebuffers),
-	    [&](auto const& imageView)
+	    [&](auto const& attachments)
 	    {
-		    auto const framebufferInfo{vk::FramebufferCreateInfo{{}, *renderPass, *imageView, swapchainExtent.width, swapchainExtent.height, 1u}};
+		    auto const framebufferInfo = vk::FramebufferCreateInfo{{}, *renderPass, attachments, swapchainExtent.width, swapchainExtent.height, 1u};
 
 		    return logicalDevice.createFramebuffer(framebufferInfo);
+	    },
+	    [this](auto const& imageView) {
+		    return std::array{*imageView, *depthImageView};
 	    });
 
 	return framebuffers;
@@ -541,8 +562,9 @@ auto Application::recordCommandBuffer(vkr::CommandBuffer const& commandBuffer, s
 	constexpr auto beginInfo = vk::CommandBufferBeginInfo{};
 	commandBuffer.begin(beginInfo);
 
-	constexpr auto clearColour    = vk::ClearValue{{std::array{0.0f, 0.0f, 0.0f, 1.0f}}};
-	auto const     renderPassInfo = vk::RenderPassBeginInfo{*renderPass, *swapchainFramebuffers.at(imageIndex), {{}, swapchainExtent}, clearColour};
+	constexpr auto clearColours =
+	    std::array{vk::ClearValue{vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f}}, vk::ClearValue{vk::ClearDepthStencilValue{1.0f, 0u}}};
+	auto const renderPassInfo = vk::RenderPassBeginInfo{*renderPass, *swapchainFramebuffers.at(imageIndex), {{}, swapchainExtent}, clearColours};
 
 	commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *layoutAndPipeline.second);
@@ -560,7 +582,7 @@ auto Application::recordCommandBuffer(vkr::CommandBuffer const& commandBuffer, s
 
 	commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *layoutAndPipeline.first, {}, *descriptorSets[currentFrameIndex], {});
 
-	commandBuffer.drawIndexed(static_cast<uint32_t>(vertexIndices.size()), 1, 0, 0, 0);
+	commandBuffer.drawIndexed(vertexIndices.size(), 1, 0, 0, 0);
 	commandBuffer.endRenderPass();
 	commandBuffer.end();
 }
@@ -895,8 +917,16 @@ auto Application::transitionImageLayout(vkr::Image const&      image,
                                         vk::ImageLayout const& oldLayout,
                                         vk::ImageLayout const& newLayout) const -> void
 {
-	constexpr static auto getAccessMasksAndStages = [](vk::ImageLayout const& oldLayout, vk::ImageLayout const& newLayout)
+	constexpr static auto getMasksAndStages =
+	    [](vk::ImageLayout const& oldLayout,
+	       vk::ImageLayout const& newLayout) -> std::tuple<vk::AccessFlags, vk::AccessFlags, vk::PipelineStageFlags, vk::PipelineStageFlags>
 	{
+		if (oldLayout == vk::ImageLayout::eUndefined and newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal) {
+			return std::make_tuple(vk::AccessFlagBits::eNone,
+			                       vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+			                       vk::PipelineStageFlagBits::eTopOfPipe,
+			                       vk::PipelineStageFlagBits::eEarlyFragmentTests);
+		}
 		if (oldLayout == vk::ImageLayout::eUndefined and newLayout == vk::ImageLayout::eTransferDstOptimal) {
 			return std::make_tuple(vk::AccessFlagBits::eNone,
 			                       vk::AccessFlagBits::eTransferWrite,
@@ -912,7 +942,18 @@ auto Application::transitionImageLayout(vkr::Image const&      image,
 		throw std::invalid_argument{"Unsupported layout transition"};
 	};
 
-	auto const [srcAccessMask, dstAccessMask, srcStage, dstStage] = getAccessMasksAndStages(oldLayout, newLayout);
+	static auto const getAspectMask = [&format](vk::ImageLayout const& newLayout) -> vk::ImageAspectFlags
+	{
+		if (newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal) {
+			if (hasStencilComponent(format)) {
+				return vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
+			}
+			return vk::ImageAspectFlagBits::eDepth;
+		}
+		return vk::ImageAspectFlagBits::eColor;
+	};
+
+	auto const [srcAccessMask, dstAccessMask, srcStage, dstStage] = getMasksAndStages(oldLayout, newLayout);
 
 	auto       commandBuffer = beginSingleTimeCommands();
 	auto const barrier       = vk::ImageMemoryBarrier{srcAccessMask,
@@ -922,7 +963,7 @@ auto Application::transitionImageLayout(vkr::Image const&      image,
                                                 VK_QUEUE_FAMILY_IGNORED,
                                                 VK_QUEUE_FAMILY_IGNORED,
                                                 *image,
-                                                vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0u, 1u, 0u, 1u}};
+                                                vk::ImageSubresourceRange{getAspectMask(newLayout), 0u, 1u, 0u, 1u}};
 
 	commandBuffer.pipelineBarrier(srcStage, dstStage, {}, {}, {}, barrier);
 
@@ -940,7 +981,10 @@ auto Application::copyBufferToImage(vkr::Buffer const& buffer, vkr::Image const&
 	endSingleTimeCommands(std::move(commandBuffer));
 }
 
-auto Application::makeTextureImageView() const -> vkr::ImageView { return makeImageView(*textureImageAndMemory.first, vk::Format::eR8G8B8A8Srgb); }
+auto Application::makeTextureImageView() const -> vkr::ImageView
+{
+	return makeImageView(*textureImageAndMemory.first, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
+}
 
 auto Application::makeTextureSampler() const -> vkr::Sampler
 {
@@ -963,6 +1007,57 @@ auto Application::makeTextureSampler() const -> vkr::Sampler
 	                                               VK_FALSE};
 
 	return logicalDevice.createSampler(samplerInfo);
+}
+
+auto Application::makeDepthImage() const -> ImageAndMemory
+{
+	auto const depthFormat              = findDepthFormat();
+	auto [depthImage, depthImageMemory] = makeImageAndMemory(swapchainExtent.width,
+	                                                         swapchainExtent.height,
+	                                                         depthFormat,
+	                                                         vk::ImageTiling::eOptimal,
+	                                                         vk::ImageUsageFlagBits::eDepthStencilAttachment,
+	                                                         vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+	transitionImageLayout(depthImage, depthFormat, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+
+	return std::make_pair(std::move(depthImage), std::move(depthImageMemory));
+}
+
+auto Application::makeDepthImageView() const -> vkr::ImageView
+{
+	return makeImageView(*depthImageAndMemory.first, findDepthFormat(), vk::ImageAspectFlagBits::eDepth);
+}
+
+auto Application::findSupportedFormat(std::span<vk::Format const>   candidates,
+                                      vk::ImageTiling const&        tiling,
+                                      vk::FormatFeatureFlags const& features) const -> vk::Format
+{
+	if (auto const it = std::ranges::find_if(
+	        candidates,
+	        [&](auto const& props)
+	        {
+		        if (tiling == vk::ImageTiling::eLinear and (props.linearTilingFeatures & features) == features) {
+			        return true;
+		        }
+		        if (tiling == vk::ImageTiling::eOptimal and (props.optimalTilingFeatures & features) == features) {
+			        return true;
+		        }
+		        return false;
+	        },
+	        [&](auto const& format) { return physicalDevice.getFormatProperties(format); });
+	    it != std::end(candidates))
+	{
+		return *it;
+	}
+	throw std::runtime_error{"Failed to find a supported format"};
+}
+
+auto Application::findDepthFormat() const -> vk::Format
+{
+	return findSupportedFormat(std::array{vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint},
+	                           vk::ImageTiling::eOptimal,
+	                           vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 }
 
 Application::QueueFamilyIndices::QueueFamilyIndices(vkr::PhysicalDevice const& physDev, vkr::SurfaceKHR const& surface)
