@@ -35,17 +35,22 @@ struct Vertex
 {
 	glm::vec2 position{};
 	glm::vec3 colour{};
+	glm::vec2 texCoord{};
 
-	static auto consteval getBindingDescription() -> vk::VertexInputBindingDescription { return {0, sizeof(Vertex)}; }
+	//
 
-	static auto consteval getAttributeDescriptions() -> std::array<vk::VertexInputAttributeDescription, 2>
+	static consteval auto getBindingDescription() -> vk::VertexInputBindingDescription { return {0, sizeof(Vertex)}; }
+
+	static consteval auto getAttributeDescriptions() -> std::array<vk::VertexInputAttributeDescription, 3>
 	{
 		constexpr auto positionAttribute =
 		    vk::VertexInputAttributeDescription{{}, {}, vk::Format::eR32G32Sfloat, static_cast<unsigned>(offsetof(Vertex, position))};
 		constexpr auto colourAttribute =
 		    vk::VertexInputAttributeDescription{1, {}, vk::Format::eR32G32B32Sfloat, static_cast<unsigned>(offsetof(Vertex, colour))};
+		constexpr auto texCoordAttribute =
+		    vk::VertexInputAttributeDescription{2u, 0u, vk::Format::eR32G32Sfloat, static_cast<unsigned>(offsetof(Vertex, texCoord))};
 
-		return {positionAttribute, colourAttribute};
+		return {positionAttribute, colourAttribute, texCoordAttribute};
 	}
 };
 
@@ -60,10 +65,10 @@ inline std::array     validationLayers{"VK_LAYER_KHRONOS_validation"};
 inline std::array     requiredDeviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 inline constexpr auto INIT_WIDTH{800u};
 inline constexpr auto INIT_HEIGHT{800u};
-auto const            vertices{std::vector<Vertex>{{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-                                                   {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-                                                   {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-                                                   {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}}};
+auto const            vertices{std::vector<Vertex>{{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+                                                   {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+                                                   {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+                                                   {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}}};
 auto const            vertexIndices{std::vector<std::uint16_t>{0, 1, 2, 2, 3, 0}};
 
 class Application
@@ -158,10 +163,12 @@ private:
 	// command pool
 	vkr::CommandPool commandPool{makeCommandPool()};
 
-	// buffers and bound memories
+	// buffers, bound memories, images
 	BufferAndMemory              vertexBufferAndMemory{makeVertexBuffer()};
 	BufferAndMemory              indexBufferAndMemory{makeIndexBuffer()};
 	ImageAndMemory               textureImageAndMemory{makeTextureImage(R"(..\..\src\textures\statue.jpg)")};
+	vkr::ImageView               textureImageView{makeTextureImageView()};
+	vkr::Sampler                 textureSampler{makeTextureSampler()};
 	std::vector<BufferAndMemory> uniformBuffersAndMemories{makeUniformBuffers()};
 	std::vector<void*>           uniformBuffersMaps{mapUniformBuffers()};
 
@@ -178,6 +185,7 @@ private:
 	std::vector<vkr::Fence>     inFlightFences{makeFences()};
 	std::uint32_t               currentFrameIndex{0u};
 
+
 	//  INSTANCE PRIVATE
 	auto               mainLoop() -> void;
 	auto               drawFrame() -> void;
@@ -187,6 +195,7 @@ private:
 	auto               pickPhysicalDevice() -> vkr::PhysicalDevice;
 	[[nodiscard]] auto makeDevice() const -> vkr::Device;
 	auto               makeSwapchain() -> vkr::SwapchainKHR;
+	[[nodiscard]] auto makeImageView(vk::Image const& image, vk::Format const& format) const -> vkr::ImageView;
 	auto               makeImageViews() -> std::vector<vkr::ImageView>;
 	[[nodiscard]] auto makeShaderModule(std::span<std::byte const>) const -> vkr::ShaderModule;
 	[[nodiscard]] auto makeRenderPass() const -> vkr::RenderPass;
@@ -210,12 +219,18 @@ private:
 	[[nodiscard]] auto makeDescriptorPool() const -> vkr::DescriptorPool;
 	auto               makeDescriptorSets() -> vkr::DescriptorSets;
 	[[nodiscard]] auto makeTextureImage(std::filesystem::path const&) const -> ImageAndMemory;
-	auto               makeImageAndMemory(std::uint32_t,
+	[[nodiscard]] auto makeImageAndMemory(std::uint32_t,
 	                                      std::uint32_t,
 	                                      vk::Format const&,
 	                                      vk::ImageTiling const&,
 	                                      vk::ImageUsageFlags const&,
 	                                      vk ::MemoryPropertyFlags const&) const -> ImageAndMemory;
+	[[nodiscard]] auto beginSingleTimeCommands() const -> vkr::CommandBuffer;
+	auto               endSingleTimeCommands(vkr::CommandBuffer&&) const -> void;
+	auto               transitionImageLayout(vkr::Image const&, vk::Format const&, vk::ImageLayout const&, vk::ImageLayout const&) const -> void;
+	auto               copyBufferToImage(vkr::Buffer const&, vkr::Image const&, std::uint32_t, std::uint32_t) const -> void;
+	[[nodiscard]] auto makeTextureImageView() const -> vkr::ImageView;
+	auto               makeTextureSampler() const -> vkr::Sampler;
 
 	//	STATIC PRIVATE
 	static auto chooseSwapSurfaceFormat(std::span<vk::SurfaceFormatKHR const>) -> vk::SurfaceFormatKHR;

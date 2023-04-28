@@ -1,4 +1,5 @@
 #define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define STB_IMAGE_IMPLEMENTATION
 
 #include "HelloTriangleApplication.hpp"
@@ -18,6 +19,7 @@
 namespace HelloTriangle
 {
 namespace fs = std::filesystem;
+namespace rv = std::ranges::views;
 using namespace std::string_view_literals;
 using namespace fmt::literals;
 
@@ -150,15 +152,16 @@ auto checkDeviceExtensionSupport(vkr::PhysicalDevice const& physDev, std::span<c
 	return std::ranges::includes(availableDeviceExtensions, requiredExtensionsCopy, {}, &vk::ExtensionProperties::extensionName);
 }
 
-auto isDeviceSuitable(vkr::PhysicalDevice const& physDev, vkr::SurfaceKHR const& surface, std::span<char const*> extensions) -> bool
+auto isDeviceSuitable(vkr::PhysicalDevice const& physDev, vkr::SurfaceKHR const& surface, std::span<char const*> const extensions) -> bool
 {
-	auto const indices = Application::QueueFamilyIndices(physDev, surface);
+	auto const indices           = Application::QueueFamilyIndices(physDev, surface);
+	auto const supportedFeatures = physDev.getFeatures();
 
 	if (auto const extensionsSupported = checkDeviceExtensionSupport(physDev, extensions); not extensionsSupported) {
 		return false;
 	}
 
-	return indices.isComplete() and Application::SwapchainSupportDetails(physDev, surface).isAdequate();
+	return indices.isComplete() and Application::SwapchainSupportDetails(physDev, surface).isAdequate() and supportedFeatures.samplerAnisotropy;
 }
 
 auto chooseSwapPresentMode(std::span<vk::PresentModeKHR const> availablePresentModes) -> vk::PresentModeKHR
@@ -275,14 +278,15 @@ auto Application::makeDevice() const -> vkr::Device
 		                       return {{}, queueFamily, queuePriorities};
 	                       });
 
-	constexpr auto deviceFeatures = vk::PhysicalDeviceFeatures{};
+	auto deviceFeatures              = vk::PhysicalDeviceFeatures{};
+	deviceFeatures.samplerAnisotropy = VK_TRUE;
 
 	if (enableValidationLayers) {
 		auto const deviceCreateInfo{vk::DeviceCreateInfo{{}, queueCreateInfos, validationLayers, requiredDeviceExtensions, &deviceFeatures}};
 		return physicalDevice.createDevice(deviceCreateInfo);
 	}
 
-	auto const deviceCreateInfo = vk::DeviceCreateInfo({}, queueCreateInfos, {}, requiredDeviceExtensions, &deviceFeatures);
+	auto const deviceCreateInfo = vk::DeviceCreateInfo{{}, queueCreateInfos, {}, requiredDeviceExtensions, &deviceFeatures};
 
 	return physicalDevice.createDevice(deviceCreateInfo);
 }
@@ -357,18 +361,20 @@ auto Application::makeSwapchain() -> vkr::SwapchainKHR
 auto Application::makeImageViews() -> std::vector<vkr::ImageView>
 {
 	auto imageViews = std::vector<vkr::ImageView>{};
-	std::ranges::transform(
-	    swapchain.getImages(),
-	    std::back_inserter(imageViews),
-	    [this](auto const& image)
-	    {
-		    auto const imageCreateInfo =
-		        vk::ImageViewCreateInfo{{}, image, vk::ImageViewType::e2D, swapchainImageFormat, {}, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
-
-		    return logicalDevice.createImageView(imageCreateInfo);
-	    });
+	imageViews.reserve(swapchain.getImages().size());
+	std::ranges::transform(swapchain.getImages(),
+	                       std::back_inserter(imageViews),
+	                       [this](auto const& image) -> vkr::ImageView { return makeImageView(image, swapchainImageFormat); });
 
 	return imageViews;
+}
+
+auto Application::makeImageView(vk::Image const& image, vk::Format const& format) const -> vkr::ImageView
+{
+	auto const imageCreateInfo =
+	    vk::ImageViewCreateInfo{{}, image, vk::ImageViewType::e2D, format, {}, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
+
+	return logicalDevice.createImageView(imageCreateInfo);
 }
 
 auto Application::readFile(fs::path const& filePath) -> std::vector<std::byte>
@@ -419,7 +425,10 @@ auto Application::makeRenderPass() const -> vkr::RenderPass
 auto Application::makeDescriptorSetLayout() const -> vkr::DescriptorSetLayout
 {
 	constexpr auto mvprojLayoutBinding = vk::DescriptorSetLayoutBinding{0u, vk::DescriptorType::eUniformBuffer, 1u, vk::ShaderStageFlagBits::eVertex};
-	auto const     layoutInfo          = vk::DescriptorSetLayoutCreateInfo{{}, mvprojLayoutBinding};
+	constexpr auto samplerLayoutBinding =
+	    vk::DescriptorSetLayoutBinding{1u, vk::DescriptorType::eCombinedImageSampler, 1u, vk::ShaderStageFlagBits::eFragment};
+	constexpr auto layoutBindings = std::array{mvprojLayoutBinding, samplerLayoutBinding};
+	auto const     layoutInfo     = vk::DescriptorSetLayoutCreateInfo{{}, layoutBindings};
 
 	return logicalDevice.createDescriptorSetLayout(layoutInfo);
 }
@@ -644,7 +653,7 @@ auto Application::remakeSwapchain() -> void
 
 auto Application::findMemoryType(std::uint32_t const typeFilter, vk::MemoryPropertyFlags const& flags) const -> std::uint32_t
 {
-	for (auto const memProperties{physicalDevice.getMemoryProperties()}; auto const i : std::views::iota(0u, memProperties.memoryTypeCount)) {
+	for (auto const memProperties{physicalDevice.getMemoryProperties()}; auto const i : rv::iota(0u, memProperties.memoryTypeCount)) {
 		if (typeFilter & (1 << i) and (memProperties.memoryTypes.at(i).propertyFlags & flags) == flags) {
 			return i;
 		}
@@ -669,18 +678,12 @@ auto Application::makeBufferAndMemory(vk::DeviceSize const size, vk::BufferUsage
 
 auto Application::copyBuffer(vkr::Buffer const& srcBuffer, vkr::Buffer const& dstBuffer, vk::DeviceSize const size) const -> void
 {
-	auto const     allocInfo     = vk::CommandBufferAllocateInfo{*commandPool, vk::CommandBufferLevel::ePrimary, 1u};
-	auto const     commandBuffer = std::move(logicalDevice.allocateCommandBuffers(allocInfo).front());
-	constexpr auto beginInfo     = vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
-	auto const     copyRegion    = vk::BufferCopy{{}, {}, size};
+	auto       commandBuffer = beginSingleTimeCommands();
+	auto const copyRegion    = vk::BufferCopy{{}, {}, size};
 
-	commandBuffer.begin(beginInfo);
 	commandBuffer.copyBuffer(*srcBuffer, *dstBuffer, copyRegion);
-	commandBuffer.end();
 
-	auto const submitInfo = vk::SubmitInfo{{}, {}, *commandBuffer};
-	graphicsQueue.submit(submitInfo, VK_NULL_HANDLE);
-	graphicsQueue.waitIdle();
+	endSingleTimeCommands(std::move(commandBuffer));
 }
 
 auto Application::makeVertexBuffer() const -> BufferAndMemory
@@ -776,8 +779,10 @@ auto Application::updateUniformBuffer(std::uint32_t const currentImage) const ->
 
 auto Application::makeDescriptorPool() const -> vkr::DescriptorPool
 {
-	auto const poolSize = vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT};
-	auto const poolInfo = vk::DescriptorPoolCreateInfo{vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, MAX_FRAMES_IN_FLIGHT, poolSize};
+	auto const uniformPoolSize = vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT};
+	auto const samplerPoolSize = vk::DescriptorPoolSize{vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT};
+	auto const poolSizes       = std::array{uniformPoolSize, samplerPoolSize};
+	auto const poolInfo        = vk::DescriptorPoolCreateInfo{vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, MAX_FRAMES_IN_FLIGHT, poolSizes};
 
 	return logicalDevice.createDescriptorPool(poolInfo);
 }
@@ -788,10 +793,14 @@ auto Application::makeDescriptorSets() -> vkr::DescriptorSets
 	auto const allocInfo         = vk::DescriptorSetAllocateInfo{*descriptorPool, layouts};
 	auto       retDescriptorSets = vkr::DescriptorSets{logicalDevice, allocInfo};
 
-	for (auto const i : std::views::iota(0u, MAX_FRAMES_IN_FLIGHT)) {
-		auto const bufferInfo      = vk::DescriptorBufferInfo{*uniformBuffersAndMemories.at(i).first, {}, sizeof(ModelViewProjection)};
-		auto const descriptorWrite = vk::WriteDescriptorSet{*retDescriptorSets.at(i), 0u, 0u, vk::DescriptorType::eUniformBuffer, {}, bufferInfo};
-		logicalDevice.updateDescriptorSets(descriptorWrite, {});
+	for (auto const i : rv::iota(0u, MAX_FRAMES_IN_FLIGHT)) {
+		auto const bufferInfo            = vk::DescriptorBufferInfo{*uniformBuffersAndMemories.at(i).first, {}, sizeof(ModelViewProjection)};
+		auto const imageInfo             = vk::DescriptorImageInfo{*textureSampler, *textureImageView, vk::ImageLayout::eReadOnlyOptimal};
+		auto const bufferDescriptorWrite = vk::WriteDescriptorSet{*retDescriptorSets.at(i), 0, 0, vk::DescriptorType::eUniformBuffer, {}, bufferInfo};
+		auto const imageDescriptorWrite =
+		    vk::WriteDescriptorSet{*retDescriptorSets.at(i), 1, 0, vk::DescriptorType::eCombinedImageSampler, imageInfo};
+
+		logicalDevice.updateDescriptorSets({bufferDescriptorWrite, imageDescriptorWrite}, {});
 	}
 
 	return retDescriptorSets;
@@ -830,7 +839,7 @@ auto Application::makeTextureImage(fs::path const& texturePath) const -> ImageAn
 {
 	int        texWidth, texHeight, texChannels;
 	auto const pixels    = stbi_load(texturePath.string().data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-	auto const imageSize = static_cast<vk::DeviceSize>(texWidth) * texHeight * texChannels;
+	auto const imageSize = static_cast<vk::DeviceSize>(texWidth) * texHeight * STBI_rgb_alpha;
 	auto const pixelSpan = std::span{pixels, imageSize};
 
 	if (pixels == nullptr) {
@@ -848,12 +857,112 @@ auto Application::makeTextureImage(fs::path const& texturePath) const -> ImageAn
 	stagingBufferMemory.unmapMemory();
 	stbi_image_free(pixels);
 
-	return makeImageAndMemory(texWidth,
-	                          texHeight,
-	                          vk::Format::eR8G8B8A8Srgb,
-	                          vk::ImageTiling::eOptimal,
-	                          vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-	                          vk::MemoryPropertyFlagBits::eDeviceLocal);
+	auto [textureImage, textureImageMemory] = makeImageAndMemory(texWidth,
+	                                                             texHeight,
+	                                                             vk::Format::eR8G8B8A8Srgb,
+	                                                             vk::ImageTiling::eOptimal,
+	                                                             vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+	                                                             vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+	transitionImageLayout(textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+	copyBufferToImage(stagingBuffer, textureImage, static_cast<std::uint32_t>(texWidth), static_cast<std::uint32_t>(texHeight));
+	transitionImageLayout(textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+	return std::make_pair(std::move(textureImage), std::move(textureImageMemory));
+}
+
+auto Application::beginSingleTimeCommands() const -> vkr::CommandBuffer
+{
+	auto const     allocInfo     = vk::CommandBufferAllocateInfo{*commandPool, vk::CommandBufferLevel::ePrimary, 1u};
+	auto           commandBuffer = std::move(logicalDevice.allocateCommandBuffers(allocInfo).front());
+	constexpr auto beginInfo     = vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
+
+	commandBuffer.begin(beginInfo);
+
+	return commandBuffer;
+}
+
+auto Application::endSingleTimeCommands(vkr::CommandBuffer&& commandBuffer) const -> void
+{
+	commandBuffer.end();
+	auto const submitInfo = vk::SubmitInfo{{}, {}, *commandBuffer, {}};
+	graphicsQueue.submit(submitInfo, {});
+	graphicsQueue.waitIdle();
+}
+
+auto Application::transitionImageLayout(vkr::Image const&      image,
+                                        vk::Format const&      format,
+                                        vk::ImageLayout const& oldLayout,
+                                        vk::ImageLayout const& newLayout) const -> void
+{
+	constexpr static auto getAccessMasksAndStages = [](vk::ImageLayout const& oldLayout, vk::ImageLayout const& newLayout)
+	{
+		if (oldLayout == vk::ImageLayout::eUndefined and newLayout == vk::ImageLayout::eTransferDstOptimal) {
+			return std::make_tuple(vk::AccessFlagBits::eNone,
+			                       vk::AccessFlagBits::eTransferWrite,
+			                       vk::PipelineStageFlagBits::eTopOfPipe,
+			                       vk::PipelineStageFlagBits::eTransfer);
+		}
+		if (oldLayout == vk::ImageLayout::eTransferDstOptimal and newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+			return std::make_tuple(vk::AccessFlagBits::eTransferWrite,
+			                       vk::AccessFlagBits::eShaderRead,
+			                       vk::PipelineStageFlagBits::eTransfer,
+			                       vk::PipelineStageFlagBits::eFragmentShader);
+		}
+		throw std::invalid_argument{"Unsupported layout transition"};
+	};
+
+	auto const [srcAccessMask, dstAccessMask, srcStage, dstStage] = getAccessMasksAndStages(oldLayout, newLayout);
+
+	auto       commandBuffer = beginSingleTimeCommands();
+	auto const barrier       = vk::ImageMemoryBarrier{srcAccessMask,
+                                                dstAccessMask,
+                                                oldLayout,
+                                                newLayout,
+                                                VK_QUEUE_FAMILY_IGNORED,
+                                                VK_QUEUE_FAMILY_IGNORED,
+                                                *image,
+                                                vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0u, 1u, 0u, 1u}};
+
+	commandBuffer.pipelineBarrier(srcStage, dstStage, {}, {}, {}, barrier);
+
+	endSingleTimeCommands(std::move(commandBuffer));
+}
+
+auto Application::copyBufferToImage(vkr::Buffer const& buffer, vkr::Image const& image, std::uint32_t width, std::uint32_t height) const -> void
+{
+	auto       commandBuffer = beginSingleTimeCommands();
+	auto const region =
+	    vk::BufferImageCopy{0u, 0u, 0u, vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, 0u, 0u, 1u}, {0, 0, 0}, {width, height, 1u}};
+
+	commandBuffer.copyBufferToImage(*buffer, *image, vk::ImageLayout::eTransferDstOptimal, region);
+
+	endSingleTimeCommands(std::move(commandBuffer));
+}
+
+auto Application::makeTextureImageView() const -> vkr::ImageView { return makeImageView(*textureImageAndMemory.first, vk::Format::eR8G8B8A8Srgb); }
+
+auto Application::makeTextureSampler() const -> vkr::Sampler
+{
+	auto const properties  = physicalDevice.getProperties();
+	auto const samplerInfo = vk::SamplerCreateInfo{{},
+	                                               vk::Filter::eLinear,
+	                                               vk::Filter::eLinear,
+	                                               vk::SamplerMipmapMode::eLinear,
+	                                               vk::SamplerAddressMode::eRepeat,
+	                                               vk::SamplerAddressMode::eRepeat,
+	                                               vk::SamplerAddressMode::eRepeat,
+	                                               0.0f,
+	                                               VK_TRUE,
+	                                               properties.limits.maxSamplerAnisotropy,
+	                                               VK_FALSE,
+	                                               vk::CompareOp::eAlways,
+	                                               0.0f,
+	                                               0.0f,
+	                                               vk::BorderColor::eIntOpaqueBlack,
+	                                               VK_FALSE};
+
+	return logicalDevice.createSampler(samplerInfo);
 }
 
 Application::QueueFamilyIndices::QueueFamilyIndices(vkr::PhysicalDevice const& physDev, vkr::SurfaceKHR const& surface)
