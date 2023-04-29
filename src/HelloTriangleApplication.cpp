@@ -1,6 +1,8 @@
+#define STB_IMAGE_IMPLEMENTATION
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#define STB_IMAGE_IMPLEMENTATION
+#define GLM_ENABLE_EXPERIMENTAL
+#define TINYOBJLOADER_IMPLEMENTATION
 
 #include "HelloTriangleApplication.hpp"
 
@@ -10,9 +12,12 @@
 #include <fmt/format.h>
 #include <fstream>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/hash.hpp>
 #include <numeric>
 #include <set>
 #include <stb_image.h>
+#include <tiny_obj_loader.h>
+#include <unordered_map>
 #include <utility>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -184,6 +189,14 @@ auto frameBufferResizeCallback = [](GLFWwindow* window, [[maybe_unused]] int wid
 };
 
 auto hasStencilComponent(vk::Format const& format) -> bool { return format == vk::Format::eD32SfloatS8Uint or format == vk::Format::eD24UnormS8Uint; }
+
+auto vertexHash = [](Vertex const& vertex)
+{
+	auto const positionHash = std::hash<glm::vec3>{}(vertex.position);
+	auto const colourHash   = std::hash<glm::vec3>{}(vertex.colour);
+	auto const uvHash       = std::hash<glm::vec2>{}(vertex.texCoord);
+	return ((positionHash ^ (colourHash << 1)) >> 1) ^ (uvHash << 1);
+};
 }// namespace
 
 auto makeWindowPointer(Application& app, std::uint32_t const width, std::uint32_t const height, std::string_view const windowName)
@@ -567,12 +580,12 @@ auto Application::recordCommandBuffer(vkr::CommandBuffer const& commandBuffer, s
 	auto const renderPassInfo = vk::RenderPassBeginInfo{*renderPass, *swapchainFramebuffers.at(imageIndex), {{}, swapchainExtent}, clearColours};
 
 	commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
-	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *layoutAndPipeline.second);
+	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *layoutAndPipeline.pipeline);
 
 	constexpr auto offset = vk::DeviceSize{0};
 
-	commandBuffer.bindVertexBuffers(0u, *vertexBufferAndMemory.first, offset);
-	commandBuffer.bindIndexBuffer(*indexBufferAndMemory.first, 0, vk::IndexType::eUint16);
+	commandBuffer.bindVertexBuffers(0u, *vertexBufferAndMemory.buffer, offset);
+	commandBuffer.bindIndexBuffer(*indexBufferAndMemory.buffer, 0, vk::IndexType::eUint32);
 
 	auto const viewport = vk::Viewport{0.0f, 0.0f, static_cast<float>(swapchainExtent.width), static_cast<float>(swapchainExtent.height), 0.0f, 1.0f};
 	commandBuffer.setViewport(0, viewport);
@@ -580,9 +593,9 @@ auto Application::recordCommandBuffer(vkr::CommandBuffer const& commandBuffer, s
 	auto const scissor = vk::Rect2D{{}, swapchainExtent};
 	commandBuffer.setScissor(0, scissor);
 
-	commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *layoutAndPipeline.first, {}, *descriptorSets[currentFrameIndex], {});
+	commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *layoutAndPipeline.layout, {}, *descriptorSets[currentFrameIndex], {});
 
-	commandBuffer.drawIndexed(vertexIndices.size(), 1, 0, 0, 0);
+	commandBuffer.drawIndexed(verticesAndIndices.vertices.size(), 1, 0, 0, 0);
 	commandBuffer.endRenderPass();
 	commandBuffer.end();
 }
@@ -695,7 +708,7 @@ auto Application::makeBufferAndMemory(vk::DeviceSize const size, vk::BufferUsage
 	auto       retBufferMemory    = logicalDevice.allocateMemory(allocInfo);
 	retBuffer.bindMemory(*retBufferMemory, 0);
 
-	return std::make_pair(std::move(retBuffer), std::move(retBufferMemory));
+	return {std::move(retBuffer), std::move(retBufferMemory)};
 }
 
 auto Application::copyBuffer(vkr::Buffer const& srcBuffer, vkr::Buffer const& dstBuffer, vk::DeviceSize const size) const -> void
@@ -710,7 +723,8 @@ auto Application::copyBuffer(vkr::Buffer const& srcBuffer, vkr::Buffer const& ds
 
 auto Application::makeVertexBuffer() const -> BufferAndMemory
 {
-	using vertexType = decltype(vertices)::value_type;
+	auto const& vertices = verticesAndIndices.vertices;
+	using vertexType = std::remove_cvref_t<decltype(vertices)>::value_type;
 
 	auto const bufferSize = sizeof(vertexType) * vertices.size();
 	auto const [stagingBuffer, stagingBufferMemory] =
@@ -727,21 +741,22 @@ auto Application::makeVertexBuffer() const -> BufferAndMemory
 	                                                                vk::MemoryPropertyFlagBits::eDeviceLocal);
 
 	copyBuffer(stagingBuffer, retVertBuffer, bufferSize);
-	return std::make_pair(std::move(retVertBuffer), std::move(retVertBufferMemory));
+	return {std::move(retVertBuffer), std::move(retVertBufferMemory)};
 }
 
 auto Application::makeIndexBuffer() const -> BufferAndMemory
 {
-	using vertexIndexType = decltype(vertexIndices)::value_type;
+	auto const& indices = verticesAndIndices.vertexIndices;
+	using vertexIndexType = std::remove_cvref_t<decltype(indices)>::value_type;
 
-	auto const bufferSize{sizeof(vertexIndexType) * vertexIndices.size()};
+	auto const bufferSize{sizeof(vertexIndexType) * indices.size()};
 	auto const [stagingBuffer, stagingBufferMemory] =
 	    makeBufferAndMemory(bufferSize,
 	                        vk::BufferUsageFlagBits::eTransferSrc,
 	                        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
 	auto const data = static_cast<std::add_pointer_t<vertexIndexType>>(stagingBufferMemory.mapMemory(0, bufferSize));
-	std::ranges::uninitialized_copy(vertexIndices, std::span{data, vertexIndices.size()});
+	std::ranges::uninitialized_copy(indices, std::span{data, indices.size()});
 	stagingBufferMemory.unmapMemory();
 
 	auto [retIndexBuffer, retIndexBufferMemory] = makeBufferAndMemory(bufferSize,
@@ -749,7 +764,7 @@ auto Application::makeIndexBuffer() const -> BufferAndMemory
 	                                                                  vk::MemoryPropertyFlagBits::eDeviceLocal);
 	copyBuffer(stagingBuffer, retIndexBuffer, bufferSize);
 
-	return std::make_pair(std::move(retIndexBuffer), std::move(retIndexBufferMemory));
+	return {std::move(retIndexBuffer), std::move(retIndexBufferMemory)};
 }
 
 auto Application::makeUniformBuffers() const -> std::vector<BufferAndMemory>
@@ -778,7 +793,7 @@ auto Application::mapUniformBuffers() -> std::vector<void*>
 
 	std::ranges::transform(uniformBuffersAndMemories,
 	                       std::back_inserter(retMaps),
-	                       [](auto const& bufferAndMemory) { return bufferAndMemory.second.mapMemory(0, bufferSize); });
+	                       [](auto const& bufferAndMemory) { return bufferAndMemory.bufferMemory.mapMemory(0, bufferSize); });
 
 	return retMaps;
 }
@@ -816,7 +831,7 @@ auto Application::makeDescriptorSets() -> vkr::DescriptorSets
 	auto       retDescriptorSets = vkr::DescriptorSets{logicalDevice, allocInfo};
 
 	for (auto const i : rv::iota(0u, MAX_FRAMES_IN_FLIGHT)) {
-		auto const bufferInfo            = vk::DescriptorBufferInfo{*uniformBuffersAndMemories.at(i).first, {}, sizeof(ModelViewProjection)};
+		auto const bufferInfo            = vk::DescriptorBufferInfo{*uniformBuffersAndMemories.at(i).buffer, {}, sizeof(ModelViewProjection)};
 		auto const imageInfo             = vk::DescriptorImageInfo{*textureSampler, *textureImageView, vk::ImageLayout::eReadOnlyOptimal};
 		auto const bufferDescriptorWrite = vk::WriteDescriptorSet{*retDescriptorSets.at(i), 0, 0, vk::DescriptorType::eUniformBuffer, {}, bufferInfo};
 		auto const imageDescriptorWrite =
@@ -854,13 +869,13 @@ auto Application::makeImageAndMemory(std::uint32_t const            width,
 	auto       imageMemory     = logicalDevice.allocateMemory(allocInfo);
 	image.bindMemory(*imageMemory, 0u);
 
-	return std::make_pair(std::move(image), std::move(imageMemory));
+	return {std::move(image), std::move(imageMemory)};
 }
 
 auto Application::makeTextureImage(fs::path const& texturePath) const -> ImageAndMemory
 {
 	int        texWidth, texHeight, texChannels;
-	auto const pixels    = stbi_load(texturePath.string().data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	auto const pixels    = stbi_load(texturePath.string().c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 	auto const imageSize = static_cast<vk::DeviceSize>(texWidth) * texHeight * STBI_rgb_alpha;
 	auto const pixelSpan = std::span{pixels, imageSize};
 
@@ -890,7 +905,7 @@ auto Application::makeTextureImage(fs::path const& texturePath) const -> ImageAn
 	copyBufferToImage(stagingBuffer, textureImage, static_cast<std::uint32_t>(texWidth), static_cast<std::uint32_t>(texHeight));
 	transitionImageLayout(textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 
-	return std::make_pair(std::move(textureImage), std::move(textureImageMemory));
+	return {std::move(textureImage), std::move(textureImageMemory)};
 }
 
 auto Application::beginSingleTimeCommands() const -> vkr::CommandBuffer
@@ -922,22 +937,22 @@ auto Application::transitionImageLayout(vkr::Image const&      image,
 	       vk::ImageLayout const& newLayout) -> std::tuple<vk::AccessFlags, vk::AccessFlags, vk::PipelineStageFlags, vk::PipelineStageFlags>
 	{
 		if (oldLayout == vk::ImageLayout::eUndefined and newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal) {
-			return std::make_tuple(vk::AccessFlagBits::eNone,
-			                       vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-			                       vk::PipelineStageFlagBits::eTopOfPipe,
-			                       vk::PipelineStageFlagBits::eEarlyFragmentTests);
+			return {vk::AccessFlagBits::eNone,
+			        vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+			        vk::PipelineStageFlagBits::eTopOfPipe,
+			        vk::PipelineStageFlagBits::eEarlyFragmentTests};
 		}
 		if (oldLayout == vk::ImageLayout::eUndefined and newLayout == vk::ImageLayout::eTransferDstOptimal) {
-			return std::make_tuple(vk::AccessFlagBits::eNone,
-			                       vk::AccessFlagBits::eTransferWrite,
-			                       vk::PipelineStageFlagBits::eTopOfPipe,
-			                       vk::PipelineStageFlagBits::eTransfer);
+			return {vk::AccessFlagBits::eNone,
+			        vk::AccessFlagBits::eTransferWrite,
+			        vk::PipelineStageFlagBits::eTopOfPipe,
+			        vk::PipelineStageFlagBits::eTransfer};
 		}
 		if (oldLayout == vk::ImageLayout::eTransferDstOptimal and newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-			return std::make_tuple(vk::AccessFlagBits::eTransferWrite,
-			                       vk::AccessFlagBits::eShaderRead,
-			                       vk::PipelineStageFlagBits::eTransfer,
-			                       vk::PipelineStageFlagBits::eFragmentShader);
+			return {vk::AccessFlagBits::eTransferWrite,
+			        vk::AccessFlagBits::eShaderRead,
+			        vk::PipelineStageFlagBits::eTransfer,
+			        vk::PipelineStageFlagBits::eFragmentShader};
 		}
 		throw std::invalid_argument{"Unsupported layout transition"};
 	};
@@ -983,7 +998,7 @@ auto Application::copyBufferToImage(vkr::Buffer const& buffer, vkr::Image const&
 
 auto Application::makeTextureImageView() const -> vkr::ImageView
 {
-	return makeImageView(*textureImageAndMemory.first, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
+	return makeImageView(*textureImageAndMemory.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
 }
 
 auto Application::makeTextureSampler() const -> vkr::Sampler
@@ -1021,12 +1036,12 @@ auto Application::makeDepthImage() const -> ImageAndMemory
 
 	transitionImageLayout(depthImage, depthFormat, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
-	return std::make_pair(std::move(depthImage), std::move(depthImageMemory));
+	return {std::move(depthImage), std::move(depthImageMemory)};
 }
 
 auto Application::makeDepthImageView() const -> vkr::ImageView
 {
-	return makeImageView(*depthImageAndMemory.first, findDepthFormat(), vk::ImageAspectFlagBits::eDepth);
+	return makeImageView(*depthImageAndMemory.image, findDepthFormat(), vk::ImageAspectFlagBits::eDepth);
 }
 
 auto Application::findSupportedFormat(std::span<vk::Format const>   candidates,
@@ -1058,6 +1073,47 @@ auto Application::findDepthFormat() const -> vk::Format
 	return findSupportedFormat(std::array{vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint},
 	                           vk::ImageTiling::eOptimal,
 	                           vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+}
+
+auto Application::loadModel(fs::path const& modelPath) -> VerticesAndIndices<std::uint32_t>
+{
+	auto attributes  = tinyobj::attrib_t{};
+	auto shapes      = std::vector<tinyobj::shape_t>{};
+	auto materials   = std::vector<tinyobj::material_t>{};
+	auto warn        = std::string{};
+	auto err         = std::string{};
+	auto modelStream = std::ifstream{modelPath};
+
+	if (!tinyobj::LoadObj(&attributes, &shapes, &materials, &warn, &err, &modelStream)) {
+		throw std::runtime_error{warn + err};
+	}
+
+	auto vertices       = std::vector<Vertex>{};
+	auto indices        = std::vector<std::uint32_t>{};
+	auto uniqueVertices = std::unordered_map<Vertex, uint32_t, decltype(vertexHash)>{0, vertexHash};
+
+	for (auto const& shape : shapes) {
+		for (auto const& [vertex_index, normal_index, texcoord_index] : shape.mesh.indices) {
+			Vertex vertex{};
+
+			vertex.position = {attributes.vertices[3 * vertex_index + 0],
+			                   attributes.vertices[3 * vertex_index + 1],
+			                   attributes.vertices[3 * vertex_index + 2]};
+
+			vertex.texCoord = {attributes.texcoords[2 * texcoord_index + 0], 1.0f - attributes.texcoords[2 * texcoord_index + 1]};
+
+			vertex.colour = glm::vec3{1.0f};
+
+			if (!uniqueVertices.contains(vertex)) {
+				uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+				vertices.emplace_back(vertex);
+			}
+
+			indices.emplace_back(uniqueVertices[vertex]);
+		}
+	}
+
+	return {vertices, indices};
 }
 
 Application::QueueFamilyIndices::QueueFamilyIndices(vkr::PhysicalDevice const& physDev, vkr::SurfaceKHR const& surface)

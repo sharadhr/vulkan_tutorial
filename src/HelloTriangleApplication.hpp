@@ -9,7 +9,6 @@
 #include <optional>
 #include <ranges>
 #include <string>
-#include <utility>
 #include <vector>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -23,13 +22,25 @@ inline constexpr auto glfwWindowDestroyer{[](auto windowPtr)
 	                                          glfwDestroyWindow(windowPtr);
 	                                          glfwTerminate();
                                           }};
-using GLFWWindowPointer         = std::unique_ptr<GLFWwindow, decltype(glfwWindowDestroyer)>;
-using PipelineLayoutAndPipeline = std::pair<vkr::PipelineLayout, vkr::Pipeline>;
-using BufferAndMemory           = std::pair<vkr::Buffer, vkr::DeviceMemory>;
-using ImageAndMemory            = std::pair<vkr::Image, vkr::DeviceMemory>;
+using GLFWWindowPointer = std::unique_ptr<GLFWwindow, decltype(glfwWindowDestroyer)>;
 
-auto makeWindowPointer(Application& app, std::uint32_t width = 800, std::uint32_t height = 600, std::string_view windowName = "empty")
-    -> GLFWWindowPointer;
+struct PipelineLayoutAndPipeline
+{
+	vkr::PipelineLayout layout;
+	vkr::Pipeline       pipeline;
+};
+
+struct BufferAndMemory
+{
+	vkr::Buffer       buffer;
+	vkr::DeviceMemory bufferMemory;
+};
+
+struct ImageAndMemory
+{
+	vkr::Image        image;
+	vkr::DeviceMemory imageMemory;
+};
 
 struct Vertex
 {
@@ -37,8 +48,7 @@ struct Vertex
 	glm::vec3 colour{};
 	glm::vec2 texCoord{};
 
-	//
-
+	// descriptions
 	static consteval auto getBindingDescription() -> vk::VertexInputBindingDescription { return {0, sizeof(Vertex)}; }
 
 	static consteval auto getAttributeDescriptions() -> std::array<vk::VertexInputAttributeDescription, 3>
@@ -52,6 +62,19 @@ struct Vertex
 
 		return {positionAttribute, colourAttribute, texCoordAttribute};
 	}
+
+	constexpr auto operator==(Vertex const& other) const -> bool
+	{
+		return position == other.position && colour == other.colour && texCoord == other.texCoord;
+	}
+};
+
+template<typename IndexType>
+    requires std::unsigned_integral<IndexType>
+struct VerticesAndIndices
+{
+	std::vector<Vertex>    vertices;
+	std::vector<IndexType> vertexIndices;
 };
 
 struct ModelViewProjection
@@ -61,27 +84,24 @@ struct ModelViewProjection
 	glm::mat4 projection{};
 };
 
-inline std::array     validationLayers{"VK_LAYER_KHRONOS_validation"};
-inline std::array     requiredDeviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-inline constexpr auto INIT_WIDTH{800u};
-inline constexpr auto INIT_HEIGHT{800u};
-auto const            vertices{std::vector<Vertex>{{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-                                                   {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-                                                   {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-                                                   {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-                                                   // lower plane
-                                                   {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-                                                   {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-                                                   {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-                                                   {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}}};
-auto const            vertexIndices{std::vector<std::uint16_t>{0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4}};
+inline auto           validationLayers         = std::array{"VK_LAYER_KHRONOS_validation"};
+inline auto           requiredDeviceExtensions = std::array{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-class Application
+inline constexpr auto INIT_WIDTH  = 800u;
+inline constexpr auto INIT_HEIGHT = 800u;
+
+auto const            MODEL_PATH   = std::filesystem::path{"../../src/models/viking_room.obj"};
+auto const            TEXTURE_PATH = std::filesystem::path{"../../src/textures/viking_room.png"};
+
+auto makeWindowPointer(Application& app, std::uint32_t width = 800, std::uint32_t height = 600, std::string_view windowName = "empty")
+    -> GLFWWindowPointer;
+
+class Application final
 {
 public:
 	//	CONSTRUCTORS, DESTRUCTORS
 	Application();
-	virtual ~Application();
+	~Application();
 
 	//	INSTANCE PUBLIC
 	bool framebufferResized{};
@@ -160,23 +180,24 @@ private:
 	std::vector<vkr::ImageView> swapchainImageViews{makeImageViews()};
 
 	// render pass, pipeline
-	vkr::RenderPass               renderPass{makeRenderPass()};
-	vkr::DescriptorSetLayout      descriptorSetLayout{makeDescriptorSetLayout()};
-	PipelineLayoutAndPipeline     layoutAndPipeline{makeGraphicsPipeline()};
+	vkr::RenderPass           renderPass{makeRenderPass()};
+	vkr::DescriptorSetLayout  descriptorSetLayout{makeDescriptorSetLayout()};
+	PipelineLayoutAndPipeline layoutAndPipeline{makeGraphicsPipeline()};
 
 	// command pool
 	vkr::CommandPool commandPool{makeCommandPool()};
 
 	// buffers, bound memories, images
-	BufferAndMemory              vertexBufferAndMemory{makeVertexBuffer()};
-	BufferAndMemory              indexBufferAndMemory{makeIndexBuffer()};
-	ImageAndMemory               textureImageAndMemory{makeTextureImage(R"(..\..\src\textures\statue.jpg)")};
-	ImageAndMemory               depthImageAndMemory{makeDepthImage()};
-	vkr::ImageView               textureImageView{makeTextureImageView()};
-	vkr::ImageView               depthImageView{makeDepthImageView()};
-	vkr::Sampler                 textureSampler{makeTextureSampler()};
-	std::vector<BufferAndMemory> uniformBuffersAndMemories{makeUniformBuffers()};
-	std::vector<void*>           uniformBuffersMaps{mapUniformBuffers()};
+	VerticesAndIndices<std::uint32_t> verticesAndIndices{loadModel(MODEL_PATH)};
+	BufferAndMemory                   vertexBufferAndMemory{makeVertexBuffer()};
+	BufferAndMemory                   indexBufferAndMemory{makeIndexBuffer()};
+	ImageAndMemory                    textureImageAndMemory{makeTextureImage(TEXTURE_PATH)};
+	ImageAndMemory                    depthImageAndMemory{makeDepthImage()};
+	vkr::ImageView                    textureImageView{makeTextureImageView()};
+	vkr::ImageView                    depthImageView{makeDepthImageView()};
+	vkr::Sampler                      textureSampler{makeTextureSampler()};
+	std::vector<BufferAndMemory>      uniformBuffersAndMemories{makeUniformBuffers()};
+	std::vector<void*>                uniformBuffersMaps{mapUniformBuffers()};
 
 	// framebuffer
 	std::vector<vkr::Framebuffer> swapchainFramebuffers{makeFramebuffers()};
@@ -193,6 +214,8 @@ private:
 	std::vector<vkr::Semaphore> renderFinishedSemaphores{makeSemaphores()};
 	std::vector<vkr::Fence>     inFlightFences{makeFences()};
 	std::uint32_t               currentFrameIndex{0u};
+
+	// vertices
 
 	//  INSTANCE PRIVATE
 	auto               mainLoop() -> void;
@@ -239,10 +262,11 @@ private:
 	auto               copyBufferToImage(vkr::Buffer const&, vkr::Image const&, std::uint32_t, std::uint32_t) const -> void;
 	[[nodiscard]] auto makeTextureImageView() const -> vkr::ImageView;
 	[[nodiscard]] auto makeTextureSampler() const -> vkr::Sampler;
-	auto               makeDepthImage() const -> ImageAndMemory;
+	[[nodiscard]] auto makeDepthImage() const -> ImageAndMemory;
 	[[nodiscard]] auto makeDepthImageView() const -> vkr::ImageView;
 	[[nodiscard]] auto findSupportedFormat(std::span<vk::Format const>, vk::ImageTiling const&, vk::FormatFeatureFlags const&) const -> vk::Format;
 	[[nodiscard]] auto findDepthFormat() const -> vk::Format;
+	[[nodiscard]] static auto loadModel(std::filesystem::path const&) -> VerticesAndIndices<std::uint32_t>;
 
 	//	STATIC PRIVATE
 	static auto chooseSwapSurfaceFormat(std::span<vk::SurfaceFormatKHR const>) -> vk::SurfaceFormatKHR;

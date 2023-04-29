@@ -10,6 +10,7 @@ find_package(glm CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(fmt CONFIG REQUIRED)
+find_package(tinyobjloader CONFIG REQUIRED)
 
 add_executable(vulkan_tutorial)
 
@@ -20,7 +21,7 @@ target_compile_features(vulkan_tutorial PRIVATE cxx_std_20)
 set_target_properties(vulkan_tutorial 
         PROPERTIES CXX_EXTENSIONS OFF
         VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
-target_link_libraries(vulkan_tutorial PRIVATE glfw glm::glm fmt::fmt Threads::Threads Vulkan::Vulkan)
+target_link_libraries(vulkan_tutorial PRIVATE glfw glm::glm fmt::fmt Threads::Threads Vulkan::Vulkan tinyobjloader::tinyobjloader)
 target_compile_definitions(vulkan_tutorial PRIVATE
         VULKAN_HPP_NO_SMART_HANDLE
         VULKAN_HPP_STORAGE_SHARED
