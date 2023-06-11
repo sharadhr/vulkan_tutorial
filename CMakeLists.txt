@@ -15,7 +15,7 @@ find_package(tinyobjloader CONFIG REQUIRED)
 add_executable(vulkan_tutorial)
 
 target_sources(vulkan_tutorial PRIVATE src/HelloTriangleApplication.cpp src/main.cpp $<$<PLATFORM_ID:Linux>:src/dlclose.cpp>)
-target_glsl_shaders(vulkan_tutorial PRIVATE src/shaders/triangle.vert src/shaders/triangle.frag)
+target_shaders(vulkan_tutorial GLSL PRIVATE src/shaders/triangle.vert src/shaders/triangle.frag)
 
 target_compile_features(vulkan_tutorial PRIVATE cxx_std_20)
 set_target_properties(vulkan_tutorial 
